@@ -631,11 +631,9 @@
       };
       
       // Register the message handler
-      console.log('[MindContent] ✅ Registering new message handler');
       window.addEventListener('message', this.messageHandler);
       
       // Send initial ready check
-      console.log('[MindContent] 📤 Sending sdk_ready to iframe');
       this.sendMessage({ type: 'sdk_ready' });
     },
 
@@ -1201,8 +1199,7 @@
      * Start tracking user behavior on parent page
      */
     startBehaviorTracking: function() {
-      console.log('[MindContent] 👁️ Starting behavior tracking...');
-      
+            
       // Track text selection
       document.addEventListener('mouseup', () => {
         // Don't track text selections if WebSocket is closed
