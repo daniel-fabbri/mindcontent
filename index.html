@@ -54,9 +54,26 @@
         <p><small>Powered by MindContent AI</small></p>
     </div>
 
-    <!-- MindContent SDK v2 - Embeds React app via iframe -->
-    <script src="https://app-frontend-webperso-dev-si6m63nydv3ko.azurewebsites.net/public/mindcontent-v2.js"></script>
-    
-    <!-- <script src="mindcontent-v2.js"></script> -->
+    <!-- MindContent SDK v2 - Auto-loads based on environment -->
+    <script>
+        // Auto-detect environment and load appropriate SDK
+        (function() {
+            const isLocal = window.location.hostname === 'localhost' || 
+                           window.location.hostname === '127.0.0.1' ||
+                           window.location.protocol === 'file:';
+            
+            const sdkUrl = isLocal 
+                ? 'http://localhost:5173/public/mindcontent-v2.js'  // Local development (Vite serves from public/)
+                : 'https://app-frontend-webperso-dev-si6m63nydv3ko.azurewebsites.net/public/mindcontent-v2.js'; // Production
+            
+            console.log('[MindContent Loader] Environment:', isLocal ? 'Local' : 'Production');
+            console.log('[MindContent Loader] Loading SDK from:', sdkUrl);
+            
+            const script = document.createElement('script');
+            script.src = sdkUrl;
+            script.async = false;
+            document.body.appendChild(script);
+        })();
+    </script>
 </body>
 </html>

@@ -16,10 +16,37 @@
 (function(window) {
   'use strict';
 
+  // Auto-detect environment and set configuration
+  const detectEnvironment = () => {
+    const hostname = window.location.hostname;
+    return (hostname !== 'localhost' && hostname !== '127.0.0.1') ? 'production' : 'development';
+  };
+
+  const environmentConfig = {
+    development: {
+      reactAppUrl: 'http://localhost:5173',
+      apiUrl: 'http://localhost:8000',
+      wsUrl: 'ws://localhost:8000'
+    },
+    production: {
+      reactAppUrl: 'https://app-frontend-webperso-dev-si6m63nydv3ko.azurewebsites.net',
+      apiUrl: 'https://app-backend-webperso-dev-si6m63nydv3ko.azurewebsites.net',
+      wsUrl: 'wss://app-backend-webperso-dev-si6m63nydv3ko.azurewebsites.net'
+    }
+  };
+
+  const currentEnv = detectEnvironment();
+  const envConfig = environmentConfig[currentEnv];
+
+  console.log('[MindContent SDK] Environment:', currentEnv);
+  console.log('[MindContent SDK] Config:', envConfig);
+
   const MindContent = {
     version: '2.0.0',
     config: {
-      reactAppUrl: 'http://localhost:5173',
+      reactAppUrl: envConfig.reactAppUrl,
+      apiUrl: envConfig.apiUrl,
+      wsUrl: envConfig.wsUrl,
       containerId: 'mindcontent',
       pageUrl: null, // Will be set to current page URL
       autoInit: true
