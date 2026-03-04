@@ -65,7 +65,7 @@
       this.continueInit();
     },
     
-    showIntentModal: async function() {
+    showIntentModal: function() {
       console.log('[MindContent SDK] 🎯 showIntentModal called');
       
       if (!document.body) {
@@ -92,28 +92,8 @@
       const randomIntent = possibleIntents[Math.floor(Math.random() * possibleIntents.length)];
       this.config.simulatedIntent = randomIntent;
       
+      // Start with anonymous user only - load real users in background
       let usersOptions = '<option value="anonymous">Anonymous User</option>';
-      try {
-        console.log(`[MindContent SDK] 📡 Fetching users from: ${API_URL}/api/users`);
-        const response = await fetch(`${API_URL}/api/users`);
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.warn(`[MindContent SDK] ⚠️ Users API failed: ${response.status}`, errorText);
-          throw new Error(`Server returned ${response.status}: ${errorText}`);
-        }
-        
-        const data = await response.json();
-        console.log(`[MindContent SDK] ✅ Users loaded:`, data);
-        
-        if (data.users && data.users.length > 0) {
-          data.users.forEach(user => {
-            usersOptions += `<option value="${user.user_id}">${user.full_name} (${user.city}, ${user.country})</option>`;
-          });
-        }
-      } catch (error) {
-        console.warn('[MindContent SDK] ⚠️ Could not load users, using anonymous only:', error.message);
-      }
       
       const modalHTML = `
         <div id="mindcontent-intent-modal">
@@ -182,6 +162,34 @@
       consentCheckbox.addEventListener('change', (e) => {
         startBtn.disabled = !e.target.checked;
       });
+      
+      // Load users in background (don't block modal display)
+      (async () => {
+        try {
+          console.log(`[MindContent SDK] 📡 Fetching users in background from: ${API_URL}/api/users`);
+          const response = await fetch(`${API_URL}/api/users`);
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.warn(`[MindContent SDK] ⚠️ Users API failed: ${response.status}`, errorText);
+            return;
+          }
+          
+          const data = await response.json();
+          console.log(`[MindContent SDK] ✅ Users loaded in background:`, data);
+          
+          if (data.users && data.users.length > 0) {
+            // Update the select dropdown with real users
+            const additionalOptions = data.users.map(user => 
+              `<option value="${user.user_id}">${user.full_name} (${user.city}, ${user.country})</option>`
+            ).join('');
+            userSelect.innerHTML += additionalOptions;
+            console.log(`[MindContent SDK] ✅ Added ${data.users.length} users to dropdown`);
+          }
+        } catch (error) {
+          console.warn('[MindContent SDK] ⚠️ Could not load users in background:', error.message);
+        }
+      })();
       
       startBtn.addEventListener('click', async () => {
         if (startBtn.disabled) return;
