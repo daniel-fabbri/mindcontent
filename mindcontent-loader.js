@@ -4,21 +4,33 @@
  * Just include this script in any HTML page: <script src="mindcontent-loader.js"></script>
  */
 (function() {
-    // Detect if running locally or in production
+    // Detect environment
     const isLocal = window.location.protocol === 'file:' || 
                    window.location.hostname === 'localhost' ||
                    window.location.hostname === '127.0.0.1';
     
+    const isGitHubPages = window.location.hostname.includes('github.io');
+    
     // Set base URLs based on environment
-    const cssUrl = isLocal
-        ? 'file:///C:/dev/mindcontent/mindcontent-frontend/public/mindcontent.css'
-        : 'https://app-frontend-webperso-dev-si6m63nydv3ko.azurewebsites.net/mindcontent.css';
+    let cssUrl, sdkUrl, envName;
     
-    const sdkUrl = isLocal
-        ? 'file:///C:/dev/mindcontent/mindcontent-frontend/public/mindcontent-v2-fixed.js'
-        : 'https://app-frontend-webperso-dev-si6m63nydv3ko.azurewebsites.net/mindcontent-v2-fixed.js';
+    if (isLocal) {
+        cssUrl = 'file:///C:/dev/mindcontent/mindcontent-frontend/public/mindcontent.css';
+        sdkUrl = 'file:///C:/dev/mindcontent/mindcontent-frontend/public/mindcontent-v2-fixed.js';
+        envName = 'Local';
+    } else if (isGitHubPages) {
+        // Use relative paths for GitHub Pages
+        cssUrl = 'mindcontent.css';
+        sdkUrl = 'mindcontent-v2-fixed.js';
+        envName = 'GitHub Pages';
+    } else {
+        // Azure production
+        cssUrl = 'https://app-frontend-webperso-dev-si6m63nydv3ko.azurewebsites.net/mindcontent.css';
+        sdkUrl = 'https://app-frontend-webperso-dev-si6m63nydv3ko.azurewebsites.net/mindcontent-v2-fixed.js';
+        envName = 'Azure Production';
+    }
     
-    console.log(`[MindContent Loader] Environment: ${isLocal ? 'Local' : 'Production'}`);
+    console.log(`[MindContent Loader] Environment: ${envName}`);
     
     // Load CSS first
     const link = document.createElement('link');
