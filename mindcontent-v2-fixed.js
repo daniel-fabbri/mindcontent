@@ -1,7 +1,7 @@
 (function(window) {
   'use strict';
 
-  
+  console.log('🚀 MindContent SDK v2.0.3 LOADING...');
 
   // Detecção automática de ambiente (local vs produção)
   const isLocalEnvironment = window.location.hostname === 'localhost' || 
@@ -16,7 +16,8 @@
     ? 'http://localhost:8000'
     : 'https://app-backend-webperso-dev-si6m63nydv3ko.azurewebsites.net';
   
-  
+  console.log(`[MindContent SDK] Environment: ${isLocalEnvironment ? 'Local' : 'Production'}`);
+  console.log(`[MindContent SDK] API_URL: ${API_URL}`);
 
   const MindContent = {
     version: '2.0.3-all-components',
@@ -57,16 +58,23 @@
     },
 
     init: function(options) {
+      console.log('[MindContent SDK] 📋 init() called with options:', options);
       this.config = { ...this.config, ...options };
+      console.log('[MindContent SDK] 📋 Final config:', this.config);
       this.showIntentModal();
       this.continueInit();
     },
     
     showIntentModal: async function() {
+      console.log('[MindContent SDK] 🎯 showIntentModal called');
+      
       if (!document.body) {
+        console.log('[MindContent SDK] ⏳ Waiting for document.body...');
         setTimeout(() => this.showIntentModal(), 100);
         return;
       }
+      
+      console.log('[MindContent SDK] ✅ document.body ready, creating modal...');
       
       const possibleIntents = [
         'Learn about the product',
@@ -86,14 +94,17 @@
       
       let usersOptions = '<option value="anonymous">Anonymous User</option>';
       try {
+        console.log(`[MindContent SDK] 📡 Fetching users from: ${API_URL}/api/users`);
         const response = await fetch(`${API_URL}/api/users`);
         
         if (!response.ok) {
           const errorText = await response.text();
+          console.warn(`[MindContent SDK] ⚠️ Users API failed: ${response.status}`, errorText);
           throw new Error(`Server returned ${response.status}: ${errorText}`);
         }
         
         const data = await response.json();
+        console.log(`[MindContent SDK] ✅ Users loaded:`, data);
         
         if (data.users && data.users.length > 0) {
           data.users.forEach(user => {
@@ -101,6 +112,7 @@
           });
         }
       } catch (error) {
+        console.warn('[MindContent SDK] ⚠️ Could not load users, using anonymous only:', error.message);
       }
       
       const modalHTML = `
@@ -145,10 +157,13 @@
       `;
       
       document.body.insertAdjacentHTML('beforeend', modalHTML);
+      console.log('[MindContent SDK] ✅ Modal HTML injected into DOM');
       
       const startBtn = document.getElementById('mindcontent-intent-start-btn');
       const consentCheckbox = document.getElementById('mindcontent-ai-consent');
       const userSelect = document.getElementById('mindcontent-user-select');
+      
+      console.log('[MindContent SDK] Modal elements:', { startBtn, consentCheckbox, userSelect });
       
       const self = this;
       
@@ -1618,10 +1633,15 @@
 
   // Auto-initialization function
   function autoInitialize() {
+    console.log('[MindContent SDK] 🔄 autoInitialize called');
     const container = document.getElementById('mindcontent');
+    console.log('[MindContent SDK] Container found:', container);
+    
     if (container) {
       const pageId = container.getAttribute('data-page-id');
       const apiUrl = container.getAttribute('data-api-url');
+      
+      console.log('[MindContent SDK] Page ID:', pageId, 'API URL:', apiUrl);
       
       const initConfig = { pageId: pageId };
       
@@ -1631,19 +1651,25 @@
       }
       // Caso contrário, usa a detecção automática já configurada
       
+      console.log('[MindContent SDK] 🚀 Calling MindContent.init() with config:', initConfig);
       MindContent.init(initConfig);
+    } else {
+      console.warn('[MindContent SDK] ⚠️ No element with id="mindcontent" found!');
     }
   }
   
   // Auto-init: supports both DOMContentLoaded and dynamic loading
   if (document.readyState === 'loading') {
     // DOM still loading
+    console.log('[MindContent SDK] DOM still loading, adding DOMContentLoaded listener');
     document.addEventListener('DOMContentLoaded', autoInitialize);
   } else {
     // DOM already loaded (script loaded dynamically)
+    console.log('[MindContent SDK] DOM already loaded, calling autoInitialize immediately');
     autoInitialize();
   }
 
   window.MindContent = MindContent;
+  console.log('[MindContent SDK] ✅ SDK fully loaded and ready!');
 
 })(window);
