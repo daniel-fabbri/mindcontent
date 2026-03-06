@@ -23,9 +23,11 @@
     version: '2.0.3-all-components',
     config: {
       reactAppUrl: REACT_APP_URL,
+      apiUrl: API_URL,  // Add API_URL to config for tracking data fetching
       containerId: 'mindcontent',
       pageUrl: null,
-      autoInit: true
+      autoInit: true,
+      trackingOnly: false  // Will be set to true if no div#mindcontent found
     },
     iframe: null,
     container: null,
@@ -35,6 +37,7 @@
     websocketClosed: false,
     sessionStart: null,
     lastSentTimestamp: 0,
+    sessionId: null,
     userBehavior: {
       totalClicks: 0,
       totalHovers: 0,
@@ -57,11 +60,28 @@
       performance: 100
     },
 
+    // Check if content should be displayed based on div#mindcontent presence
+    shouldDisplayContent: function() {
+      const container = document.getElementById(this.config.containerId);
+      const shouldDisplay = container !== null;
+      console.log(`[MindContent SDK] 🔍 Content display detection: ${shouldDisplay ? 'ENABLED' : 'DISABLED'} (div#${this.config.containerId} ${shouldDisplay ? 'found' : 'not found'})`);
+      return shouldDisplay;
+    },
+
     init: function(options) {
       console.log('[MindContent SDK] 📋 init() called with options:', options);
       this.config = { ...this.config, ...options };
       console.log('[MindContent SDK] 📋 Final config:', this.config);
-      this.showIntentModal();
+      
+      // Only show intent modal if div#mindcontent exists
+      if (this.shouldDisplayContent()) {
+        this.config.trackingOnly = false;
+        this.showIntentModal();
+      } else {
+        this.config.trackingOnly = true;
+        console.log('[MindContent SDK] 📊 Tracking-only mode (no content container found)');
+      }
+      
       this.continueInit();
     },
     
@@ -252,6 +272,46 @@
       }
     },
     
+    // Fetch and send tracking-only data (user info + visits)
+    fetchAndSendTrackingData: async function() {
+      if (!this.config.trackingOnly || !this.iframe) {
+        return;
+      }
+      
+      const userId = this.config.userId;
+      const API_URL = this.config.apiUrl;
+      
+      try {
+        // Fetch user info and visits in parallel
+        const [userInfoRes, visitsRes] = await Promise.all([
+          fetch(`${API_URL}/api/users/info/${userId}`),
+          fetch(`${API_URL}/api/visits/user/${userId}?limit=20`)
+        ]);
+        
+        const userData = userInfoRes.ok ? await userInfoRes.json() : null;
+        const visitsData = visitsRes.ok ? await visitsRes.json() : null;
+        
+        // Send tracking data to sidebar
+        if (userData || visitsData) {
+          this.sendMessage({
+            type: 'TRACKING_DATA',
+            data: {
+              user: userData?.user || null,
+              visits: visitsData?.visits || [],
+              totalVisits: visitsData?.count || 0
+            }
+          });
+          
+          console.log('[MindContent SDK] 📊 Tracking data sent to sidebar:', {
+            hasUser: !!userData?.user,
+            visitCount: visitsData?.count || 0
+          });
+        }
+      } catch (error) {
+        console.error('[MindContent SDK] ❌ Error fetching tracking data:', error);
+      }
+    },
+    
     sendUserPurchasesToReact: function() {
       if (!this.config.currentUser || !this.iframe) {
         return;
@@ -272,6 +332,78 @@
         };
         
         iframe.contentWindow.postMessage(payload, this.config.reactAppUrl);
+      }
+    },
+    
+    // Session ID management
+    getOrCreateSessionId: function() {
+      if (this.sessionId) {
+        return this.sessionId;
+      }
+      
+      // Try to get from sessionStorage (persists within browser tab)
+      let sessionId = sessionStorage.getItem('mindcontent_session_id');
+      
+      if (!sessionId) {
+        // Create new session ID
+        sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
+        sessionStorage.setItem('mindcontent_session_id', sessionId);
+      }
+      
+      this.sessionId = sessionId;
+      return sessionId;
+    },
+    
+    // Track page visit
+    trackPageVisit: async function() {
+      try {
+        const sessionId = this.getOrCreateSessionId();
+        const userId = localStorage.getItem('user_id');
+        
+        // Get previous page URL from multiple sources (in order of priority)
+        let previousPageUrl = null;
+        
+        // 1. Try document.referrer (works for external links and some internal navigation)
+        if (document.referrer && document.referrer !== window.location.href) {
+          previousPageUrl = document.referrer;
+        } 
+        // 2. Fallback to last visited page stored in sessionStorage (for internal navigation)
+        else {
+          previousPageUrl = sessionStorage.getItem('mindcontent_last_page') || null;
+        }
+        
+        const visitData = {
+          user_id: userId,
+          session_id: sessionId,
+          page_url: window.location.href,
+          previous_page_url: previousPageUrl,
+          user_agent: navigator.userAgent
+        };
+        
+        console.log('[MindContent SDK] 📊 Tracking page visit:', visitData);
+        console.log('[MindContent SDK] 🔍 Debug - document.referrer:', document.referrer);
+        console.log('[MindContent SDK] 🔍 Debug - sessionStorage last_page:', sessionStorage.getItem('mindcontent_last_page'));
+        
+        // Store current page as "last page" for next navigation BEFORE tracking
+        // This ensures the next page load will have this value available
+        sessionStorage.setItem('mindcontent_last_page', window.location.href);
+        
+        const response = await fetch(`${API_URL}/api/visits/track`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(visitData)
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          console.log('[MindContent SDK] ✅ Page visit tracked:', result);
+        } else {
+          console.warn('[MindContent SDK] ⚠️ Failed to track page visit:', response.status);
+        }
+      } catch (error) {
+        console.error('[MindContent SDK] ❌ Error tracking page visit:', error);
       }
     },
     
@@ -303,11 +435,15 @@
       this.userBehavior.language = navigator.language || navigator.userLanguage;
       this.userBehavior.lastActivityTime = Date.now();
       
+      // Always track page visits
+      this.trackPageVisit();
+      
       this.updateBatteryInfo();
       this.updateGeolocationData();
       this.startBehaviorTracking();
       
-      if (this.config.autoInit) {
+      // Only embed React app if div#mindcontent exists
+      if (this.shouldDisplayContent() && this.config.autoInit) {
         if (document.readyState === 'loading') {
           document.addEventListener('DOMContentLoaded', () => {
             this.embedReactApp();
@@ -315,7 +451,43 @@
         } else {
           this.embedReactApp();
         }
+      } else {
+        console.log('[MindContent SDK] Content display disabled - tracking only mode');
+        // Still create sidebar button for tracking-only mode
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', () => {
+            this.createToggleButton();
+            this.createSidebarIframe();
+          });
+        } else {
+          this.createToggleButton();
+          this.createSidebarIframe();
+        }
       }
+    },
+
+    // Create sidebar iframe without main content
+    createSidebarIframe: function() {
+      console.log('[MindContent SDK] Creating sidebar iframe for tracking-only mode');
+      
+      const iframe = document.createElement('iframe');
+      iframe.id = 'mindcontent-iframe';
+      const iframeUrl = `${this.config.reactAppUrl}/embed`;
+      
+      iframe.src = iframeUrl;
+      iframe.setAttribute('allowtransparency', 'true');
+      
+      iframe.onload = () => {
+        this.iframe = iframe;
+        this.setupCommunication();
+        this.startScrollTracking();
+      };
+      
+      iframe.onerror = (e) => {
+        console.error('[MindContent SDK] Error loading sidebar iframe:', e);
+      };
+      
+      document.body.appendChild(iframe);
     },
 
     embedReactApp: function() {
@@ -447,9 +619,17 @@
             type: 'config',
             data: {
               pageUrl: this.config.pageUrl,
-              userId: this.config.userId
+              userId: this.config.userId,
+              trackingOnly: this.config.trackingOnly  // Tell React app to skip AI/WebSocket/Contentful
             }
           });
+          
+          // If tracking-only mode, fetch and send user data for sidebar
+          if (this.config.trackingOnly) {
+            setTimeout(() => {
+              this.fetchAndSendTrackingData();
+            }, 500);
+          }
         } else if (message.type === 'mindcontent_log') {
         } else if (message.type === 'mindcontent_component') {
           this.injectComponent(message.component);
@@ -1365,8 +1545,15 @@
           if (data.timezone) {
             this.userBehavior.timezone = data.timezone;
           }
+        } else if (response.status === 403 || response.status === 429) {
+          // Rate limited or forbidden - silently skip, not critical for functionality
+          console.log('[MindContent SDK] ℹ️ Geolocation API rate limited, continuing without location data');
         }
       } catch (error) {
+        // Network error or timeout - non-critical, continue without geolocation
+        if (error.name !== 'AbortError') {
+          console.log('[MindContent SDK] ℹ️ Geolocation unavailable, continuing without location data');
+        }
       }
     },
 
@@ -1662,7 +1849,8 @@
       console.log('[MindContent SDK] 🚀 Calling MindContent.init() with config:', initConfig);
       MindContent.init(initConfig);
     } else {
-      console.warn('[MindContent SDK] ⚠️ No element with id="mindcontent" found!');
+      console.log('[MindContent SDK] 📊 No div#mindcontent found - initializing in tracking-only mode');
+      MindContent.init({});  // Initialize without pageId for tracking-only mode
     }
   }
   
