@@ -217,22 +217,43 @@
       // Load users in background (don't block modal display)
       (async () => {
         try {
+          console.log('🔵 [MODAL] Fetching users from:', `${API_URL}/api/users`);
           const response = await fetch(`${API_URL}/api/users`);
           
+          console.log('🔵 [MODAL] Response status:', response.status, response.statusText);
+          console.log('🔵 [MODAL] Response ok:', response.ok);
+          
           if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ [MODAL] Failed to fetch users:', response.status, errorText);
             return;
           }
           
           const data = await response.json();
+          console.log('🔵 [MODAL] Response data:', data);
+          console.log('🔵 [MODAL] Users array:', data.users);
+          console.log('🔵 [MODAL] Users count:', data.users ? data.users.length : 0);
+          
+          if (data.error) {
+            console.error('❌ [MODAL] API returned error:', data.error);
+            return;
+          }
           
           if (data.users && data.users.length > 0) {
+            console.log('✅ [MODAL] Adding', data.users.length, 'users to dropdown');
             // Update the select dropdown with real users
-            const additionalOptions = data.users.map(user => 
-              `<option value="${user.user_id}">${user.full_name} (${user.city}, ${user.country})</option>`
-            ).join('');
+            const additionalOptions = data.users.map(user => {
+              console.log('  - Adding user:', user.full_name, user.user_id);
+              return `<option value="${user.user_id}">${user.full_name} (${user.city}, ${user.country})</option>`;
+            }).join('');
             userSelect.innerHTML += additionalOptions;
+            console.log('✅ [MODAL] Dropdown updated successfully');
+          } else {
+            console.warn('⚠️ [MODAL] No users found in response');
           }
         } catch (error) {
+          console.error('❌ [MODAL] Error loading users:', error);
+          console.error('❌ [MODAL] Error stack:', error.stack);
         }
       })();
       
