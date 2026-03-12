@@ -1,50 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body data-page-title="Home">
-    <!-- Site components (header/footer) loaded by site-components.js -->
-    
-    <!-- Hero Section -->
-    <div class="hero">
-        <h1>Let AI read the room. Deliver what matters.</h1>
-        <p>Transform your website with intelligent, personalized content experiences</p>
-    </div>
-
-    <!-- Content Section 1 -->
-    <div class="content-section">
-        <h2>About Our Service</h2>
-        <p>MindContent revolutionizes how websites deliver content by using artificial intelligence to understand user behavior and preferences. Our platform analyzes real-time interactions and dynamically adjusts content to match each visitor's unique journey.</p>
-        <p>Whether you're running an e-commerce store, a media site, or a corporate website, MindContent ensures every visitor sees the most relevant content at the right moment, dramatically improving engagement and conversion rates.</p>
-    </div>
-
-    <!-- Content Section 2 -->
-    <div class="content-section">
-        <h2>Why Choose Us?</h2>
-        <p>Unlike traditional content management systems that treat all visitors the same, MindContent uses advanced machine learning algorithms to create personalized experiences. Our AI engine learns from every interaction, continuously improving its ability to predict what content will resonate with each individual user.</p>
-        <p>The result? Higher engagement, lower bounce rates, and significantly improved conversion metrics. Our clients typically see a 40-60% increase in user engagement within the first month of implementation.</p>
-    </div>
-
-    <!-- Content Section 3 -->
-    <div class="content-section">
-        <h2>Our Features</h2>
-        <p>From intelligent content recommendations to behavioral triggers and A/B testing automation, MindContent provides everything you need to create truly dynamic web experiences. Our platform seamlessly integrates with your existing tech stack and requires minimal setup.</p>
-        <p>Real-time analytics dashboards give you complete visibility into how AI decisions are impacting your metrics, while our flexible API allows for unlimited customization to match your specific business needs.</p>
-    </div>
-
-    <!-- MindContent will inject dynamic content here -->
-    <div id="mindcontent" data-page-id="9" style="max-width: 1200px; margin: 0 auto; padding: 20px;"></div>
-
-    <!-- More content after injection point -->
-    <div class="content-section">
-        <h2>Keep Scrolling!</h2>
-        <p>More content appears as you scroll down. Our AI will suggest relevant components based on your browsing behavior.</p>
-    </div>
-
-    <!-- Site components (header/footer) and MindContent SDK -->
-    <script src="site-components.js"></script>
-    <script src="mindcontent-loader.js"></script>
-</body>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="mindcontent.css">
+    </head>
+    <body data-page-title="Home">
+        <div id="mindcontent" style="max-width: 1200px; margin: 0 auto; padding: 20px;"></div>
+        <script src="site-components.js"></script>
+        <script src="mindcontent.js"></script>
+    </body>
 </html>

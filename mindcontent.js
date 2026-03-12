@@ -1,26 +1,20 @@
 (function(window) {
   'use strict';
-
-  console.log('🚀 MindContent SDK v2.0.3 LOADING...');
-
-  // Detecção automática de ambiente (local vs produção)
   const isLocalEnvironment = window.location.hostname === 'localhost' || 
                              window.location.hostname === '127.0.0.1' ||
                              window.location.protocol === 'file:';
   
   const REACT_APP_URL = isLocalEnvironment 
     ? 'http://localhost:5173' 
-    : 'https://app-frontend-webperso-dev-si6m63nydv3ko.azurewebsites.net';
+    : 'https://app-frontend-webperso-dev-taetd6ptyxspw.azurewebsites.net';
   
   const API_URL = isLocalEnvironment
     ? 'http://localhost:8000'
-    : 'https://app-backend-webperso-dev-si6m63nydv3ko.azurewebsites.net';
+    : 'https://app-backend-webperso-dev-taetd6ptyxspw.azurewebsites.net';
   
-  console.log(`[MindContent SDK] Environment: ${isLocalEnvironment ? 'Local' : 'Production'}`);
-  console.log(`[MindContent SDK] API_URL: ${API_URL}`);
 
   const MindContent = {
-    version: '2.0.3-all-components',
+    version: '2.0.4',
     config: {
       reactAppUrl: REACT_APP_URL,
       apiUrl: API_URL,  // Add API_URL to config for tracking data fetching
@@ -35,6 +29,7 @@
     sidebarOpen: false,
     messageHandler: null,
     websocketClosed: false,
+    pageNotConfigured: false,  // Flag to stop all operations when page is not configured
     sessionStart: null,
     lastSentTimestamp: 0,
     sessionId: null,
@@ -51,50 +46,86 @@
       screenResolution: null,
       timezone: null,
       language: null,
-      batteryLevel: null,
-      isCharging: false,
       ip: null,
       country: null,
-      city: null,
-      frameRate: 60,
-      performance: 100
+      city: null
     },
 
     // Check if content should be displayed based on div#mindcontent presence
     shouldDisplayContent: function() {
       const container = document.getElementById(this.config.containerId);
       const shouldDisplay = container !== null;
-      console.log(`[MindContent SDK] 🔍 Content display detection: ${shouldDisplay ? 'ENABLED' : 'DISABLED'} (div#${this.config.containerId} ${shouldDisplay ? 'found' : 'not found'})`);
       return shouldDisplay;
     },
 
-    init: function(options) {
-      console.log('[MindContent SDK] 📋 init() called with options:', options);
+    // Check if we should show the intent modal
+    shouldShowIntentModal: async function() {
+      // First, check if localStorage already has the required data
+      const hasStoredIntent = localStorage.getItem('mindcontent_simulated_intent');
+      const hasStoredUser = localStorage.getItem('mindcontent_selected_user');
+      const hasStoredConsent = localStorage.getItem('mindcontent_ai_consent');
+      
+      const hasLocalStorageData = hasStoredIntent && hasStoredUser && hasStoredConsent;
+      
+      // Check if page is configured in pageconfig database
+      const pageUrl = this.config.pageUrl || (window.location.origin + window.location.pathname);
+      
+      try {
+        const apiUrl = `${API_URL}/api/pages/check-config?page_url=${encodeURIComponent(pageUrl)}`;
+        
+        const response = await fetch(apiUrl);
+        
+        if (response.ok) {
+          const data = await response.json();
+          const isPageConfigured = data.is_configured || false;
+          
+          // If page is configured, only show modal if localStorage is empty
+          if (isPageConfigured) {
+            const shouldShow = !hasLocalStorageData;
+            return shouldShow;
+          } else {
+            // Page not configured - always show modal
+            return true;
+          }
+        } else {
+          // API error - default to showing modal
+          return true;
+        }
+      } catch (error) {
+        // On error, default to showing modal
+        return true;
+      }
+    },
+
+    init: async function(options) {
       this.config = { ...this.config, ...options };
-      console.log('[MindContent SDK] 📋 Final config:', this.config);
       
       // Only show intent modal if div#mindcontent exists
       if (this.shouldDisplayContent()) {
         this.config.trackingOnly = false;
-        this.showIntentModal();
+        
+        // Check if page is configured and localStorage status
+        try {
+          const shouldShowModal = await this.shouldShowIntentModal();
+          if (shouldShowModal) {
+            this.showIntentModal();
+          }
+        } catch (error) {
+          this.showIntentModal();
+        }
       } else {
         this.config.trackingOnly = true;
-        console.log('[MindContent SDK] 📊 Tracking-only mode (no content container found)');
       }
       
+      // Always continue initialization regardless of modal
       this.continueInit();
     },
     
     showIntentModal: function() {
-      console.log('[MindContent SDK] 🎯 showIntentModal called');
-      
       if (!document.body) {
-        console.log('[MindContent SDK] ⏳ Waiting for document.body...');
         setTimeout(() => this.showIntentModal(), 100);
         return;
       }
-      
-      console.log('[MindContent SDK] ✅ document.body ready, creating modal...');
       
       const possibleIntents = [
         'Learn about the product',
@@ -186,17 +217,13 @@
       // Load users in background (don't block modal display)
       (async () => {
         try {
-          console.log(`[MindContent SDK] 📡 Fetching users in background from: ${API_URL}/api/users`);
           const response = await fetch(`${API_URL}/api/users`);
           
           if (!response.ok) {
-            const errorText = await response.text();
-            console.warn(`[MindContent SDK] ⚠️ Users API failed: ${response.status}`, errorText);
             return;
           }
           
           const data = await response.json();
-          console.log(`[MindContent SDK] ✅ Users loaded in background:`, data);
           
           if (data.users && data.users.length > 0) {
             // Update the select dropdown with real users
@@ -204,13 +231,12 @@
               `<option value="${user.user_id}">${user.full_name} (${user.city}, ${user.country})</option>`
             ).join('');
             userSelect.innerHTML += additionalOptions;
-            console.log(`[MindContent SDK] ✅ Added ${data.users.length} users to dropdown`);
           }
         } catch (error) {
-          console.warn('[MindContent SDK] ⚠️ Could not load users in background:', error.message);
         }
       })();
       
+      // Start button click handler
       startBtn.addEventListener('click', async () => {
         if (startBtn.disabled) return;
         
@@ -223,6 +249,15 @@
         const modal = document.getElementById('mindcontent-intent-modal');
         if (modal) {
           modal.remove();
+        }
+        
+        // Notify iframe of selectedUserId change so it can reconnect WebSocket
+        const realUserId = (selectedUserId && selectedUserId !== 'anonymous') ? selectedUserId : null;
+        if (self.iframe && self.iframe.contentWindow) {
+          self.iframe.contentWindow.postMessage({
+            type: 'update_selected_user',
+            selectedUserId: realUserId
+          }, self.config.reactAppUrl);
         }
         
         if (selectedUserId !== 'anonymous' && self.config.currentUser) {
@@ -274,7 +309,7 @@
     
     // Fetch and send tracking-only data (user info + visits)
     fetchAndSendTrackingData: async function() {
-      if (!this.config.trackingOnly || !this.iframe) {
+      if (!this.config.trackingOnly || !this.iframe || this.pageNotConfigured) {
         return;
       }
       
@@ -379,11 +414,7 @@
           previous_page_url: previousPageUrl,
           user_agent: navigator.userAgent
         };
-        
-        console.log('[MindContent SDK] 📊 Tracking page visit:', visitData);
-        console.log('[MindContent SDK] 🔍 Debug - document.referrer:', document.referrer);
-        console.log('[MindContent SDK] 🔍 Debug - sessionStorage last_page:', sessionStorage.getItem('mindcontent_last_page'));
-        
+                
         // Store current page as "last page" for next navigation BEFORE tracking
         // This ensures the next page load will have this value available
         sessionStorage.setItem('mindcontent_last_page', window.location.href);
@@ -408,6 +439,7 @@
     },
     
     continueInit: function() {
+      
       let userId = localStorage.getItem('user_id');
       if (!userId) {
         if (window.crypto && window.crypto.randomUUID) {
@@ -422,7 +454,7 @@
         localStorage.setItem('user_id', userId);
       }
       this.config.userId = userId;
-      
+    
       if (!this.config.pageUrl) {
         this.config.pageUrl = window.location.origin + window.location.pathname;
       }
@@ -437,8 +469,7 @@
       
       // Always track page visits
       this.trackPageVisit();
-      
-      this.updateBatteryInfo();
+      // this.updateBatteryInfo();
       this.updateGeolocationData();
       this.startBehaviorTracking();
       
@@ -452,7 +483,6 @@
           this.embedReactApp();
         }
       } else {
-        console.log('[MindContent SDK] Content display disabled - tracking only mode');
         // Still create sidebar button for tracking-only mode
         if (document.readyState === 'loading') {
           document.addEventListener('DOMContentLoaded', () => {
@@ -468,7 +498,6 @@
 
     // Create sidebar iframe without main content
     createSidebarIframe: function() {
-      console.log('[MindContent SDK] Creating sidebar iframe for tracking-only mode');
       
       const iframe = document.createElement('iframe');
       iframe.id = 'mindcontent-iframe';
@@ -583,7 +612,7 @@
       this.messageHandler = (event) => {
         const message = event.data;
         
-        const validTypes = ['mindcontent_ready', 'mindcontent_log', 'mindcontent_component', 'mindcontent_loading', 'mindcontent_remove_loading', 'initial_decision', 'mindcontent_websocket_closed', 'mindcontent_status_update', 'sidebar_opened', 'sidebar_closed'];
+        const validTypes = ['mindcontent_ready', 'mindcontent_log', 'mindcontent_component', 'mindcontent_loading', 'mindcontent_remove_loading', 'initial_decision', 'mindcontent_websocket_closed', 'mindcontent_status_update', 'sidebar_opened', 'sidebar_closed', 'mindcontent_page_not_configured'];
         if (!message || !message.type || !validTypes.includes(message.type)) {
           return;
         }
@@ -595,7 +624,13 @@
           return;
         }
         
-        if (message.type === 'mindcontent_websocket_closed') {
+        if (message.type === 'mindcontent_page_not_configured') {
+          // Page not configured - stop all tracking operations
+          console.warn('[MindContent SDK] ⚠️ Page not configured:', message.page_url);
+          this.pageNotConfigured = true;
+          // Don't send any tracking data or scroll events
+          return;
+        } else if (message.type === 'mindcontent_websocket_closed') {
           this.websocketClosed = true;
           this.removeAllLoadingPlaceholders();
         } else if (message.type === 'mindcontent_status_update') {
@@ -615,11 +650,16 @@
         } else if (message.type === 'mindcontent_remove_loading') {
           this.removeLoadingPlaceholder(message.loadingId);
         } else if (message.type === 'mindcontent_ready') {
+          // Get selectedUserId from localStorage to pass to iframe
+          const selectedUserId = localStorage.getItem('mindcontent_selected_user');
+          const realUserId = (selectedUserId && selectedUserId !== 'anonymous') ? selectedUserId : null;
+          
           this.sendMessage({
             type: 'config',
             data: {
               pageUrl: this.config.pageUrl,
               userId: this.config.userId,
+              selectedUserId: realUserId,  // Pass selected user for session data
               trackingOnly: this.config.trackingOnly  // Tell React app to skip AI/WebSocket/Contentful
             }
           });
@@ -632,6 +672,7 @@
           }
         } else if (message.type === 'mindcontent_log') {
         } else if (message.type === 'mindcontent_component') {
+          
           this.injectComponent(message.component);
         } else if (message.type === 'mindcontent_loading') {
           this.injectLoadingPlaceholder(message.loadingId);
@@ -693,13 +734,17 @@
     },
 
     injectComponent: function(component) {
+      
       const loadingDiv = document.querySelector(`[data-loading-id="${component.loadingId}"]`);
+      
       if (loadingDiv) {
         loadingDiv.remove();
       }
       
       const targetContainer = document.getElementById(this.config.containerId);
+      
       if (!targetContainer) {
+        console.error(`❌ [SDK] Target container #${this.config.containerId} not found! Cannot inject component.`);
         return;
       }
 
@@ -1507,24 +1552,6 @@
       });
     },
 
-    updateBatteryInfo: async function() {
-      try {
-        if ('getBattery' in navigator) {
-          const battery = await navigator.getBattery();
-          this.userBehavior.batteryLevel = Math.round(battery.level * 100);
-          this.userBehavior.isCharging = battery.charging;
-          
-          battery.addEventListener('levelchange', () => {
-            this.userBehavior.batteryLevel = Math.round(battery.level * 100);
-          });
-          battery.addEventListener('chargingchange', () => {
-            this.userBehavior.isCharging = battery.charging;
-          });
-        }
-      } catch (error) {
-      }
-    },
-
     updateGeolocationData: async function() {
       try {
         const controller = new AbortController();
@@ -1627,17 +1654,13 @@
         userAgent: this.userBehavior.userAgent,
         timezone: this.userBehavior.timezone,
         language: this.userBehavior.language,
-        batteryLevel: this.userBehavior.batteryLevel,
-        isCharging: this.userBehavior.isCharging,
         connectionType: connectionType,
         downlink: downlink,
         rtt: rtt,
         networkType: networkType,
         ip: this.userBehavior.ip,
         country: this.userBehavior.country,
-        city: this.userBehavior.city,
-        frameRate: this.userBehavior.frameRate,
-        performance: this.userBehavior.performance
+        city: this.userBehavior.city
       };
       
       return {
@@ -1661,14 +1684,9 @@
         rtt: rtt,
         networkType: networkType,
         net: connectionType,
-        batteryLevel: this.userBehavior.batteryLevel,
-        isCharging: this.userBehavior.isCharging,
         ip: this.userBehavior.ip,
         country: this.userBehavior.country,
         city: this.userBehavior.city,
-        frameRate: this.userBehavior.frameRate,
-        performance: this.userBehavior.performance,
-        fps: this.userBehavior.frameRate,
         deviceContext: deviceContext
       };
     },
@@ -1694,17 +1712,13 @@
         userAgent: this.userBehavior.userAgent,
         timezone: this.userBehavior.timezone,
         language: this.userBehavior.language,
-        batteryLevel: this.userBehavior.batteryLevel,
-        isCharging: this.userBehavior.isCharging,
         connectionType: connectionType,
         downlink: downlink,
         rtt: rtt,
         networkType: networkType,
         ip: this.userBehavior.ip,
         country: this.userBehavior.country,
-        city: this.userBehavior.city,
-        frameRate: this.userBehavior.frameRate,
-        performance: this.userBehavior.performance
+        city: this.userBehavior.city
       };
       
       return {
@@ -1728,14 +1742,9 @@
         rtt: rtt,
         networkType: networkType,
         net: connectionType,
-        batteryLevel: this.userBehavior.batteryLevel,
-        isCharging: this.userBehavior.isCharging,
         ip: this.userBehavior.ip,
         country: this.userBehavior.country,
         city: this.userBehavior.city,
-        frameRate: this.userBehavior.frameRate,
-        performance: this.userBehavior.performance,
-        fps: this.userBehavior.frameRate,
         deviceContext: deviceContext
       };
     },
@@ -1769,7 +1778,7 @@
       let scrollTimeout;
       
       const sendScrollEvent = () => {
-        if (this.websocketClosed) {
+        if (this.websocketClosed || this.pageNotConfigured) {
           return;
         }
         
@@ -1828,25 +1837,14 @@
 
   // Auto-initialization function
   function autoInitialize() {
-    console.log('[MindContent SDK] 🔄 autoInitialize called');
-    const container = document.getElementById('mindcontent');
-    console.log('[MindContent SDK] Container found:', container);
-    
+    const container = document.getElementById('mindcontent');    
     if (container) {
       const pageId = container.getAttribute('data-page-id');
-      const apiUrl = container.getAttribute('data-api-url');
-      
-      console.log('[MindContent SDK] Page ID:', pageId, 'API URL:', apiUrl);
-      
+      const apiUrl = container.getAttribute('data-api-url');  
       const initConfig = { pageId: pageId };
-      
-      // Só sobrescreve reactAppUrl se explicitamente fornecido via data-api-url
       if (apiUrl) {
         initConfig.reactAppUrl = apiUrl;
       }
-      // Caso contrário, usa a detecção automática já configurada
-      
-      console.log('[MindContent SDK] 🚀 Calling MindContent.init() with config:', initConfig);
       MindContent.init(initConfig);
     } else {
       console.log('[MindContent SDK] 📊 No div#mindcontent found - initializing in tracking-only mode');
@@ -1857,15 +1855,12 @@
   // Auto-init: supports both DOMContentLoaded and dynamic loading
   if (document.readyState === 'loading') {
     // DOM still loading
-    console.log('[MindContent SDK] DOM still loading, adding DOMContentLoaded listener');
     document.addEventListener('DOMContentLoaded', autoInitialize);
   } else {
     // DOM already loaded (script loaded dynamically)
-    console.log('[MindContent SDK] DOM already loaded, calling autoInitialize immediately');
     autoInitialize();
   }
 
   window.MindContent = MindContent;
-  console.log('[MindContent SDK] ✅ SDK fully loaded and ready!');
 
 })(window);

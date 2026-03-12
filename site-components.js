@@ -105,7 +105,7 @@
 
         injectHead(pageTitle);
         injectHeader();
-        injectFooter();
+        // injectFooter();
 
         console.log('🎨 Site components initialized');
     }
