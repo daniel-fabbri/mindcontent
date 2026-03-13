@@ -30,6 +30,7 @@
     messageHandler: null,
     websocketClosed: false,
     pageNotConfigured: false,  // Flag to stop all operations when page is not configured
+    pageIsConfigured: false,  // True if page exists in pageconfig database
     sessionStart: null,
     lastSentTimestamp: 0,
     sessionId: null,
@@ -100,6 +101,9 @@
     init: async function(options) {
       this.config = { ...this.config, ...options };
       
+      // First, check if page is configured
+      await this.checkIfPageIsConfigured();
+      
       // Only show intent modal if div#mindcontent exists
       if (this.shouldDisplayContent()) {
         this.config.trackingOnly = false;
@@ -119,6 +123,26 @@
       
       // Always continue initialization regardless of modal
       this.continueInit();
+    },
+
+    // Check if page is configured in database
+    checkIfPageIsConfigured: async function() {
+      const pageUrl = this.config.pageUrl || (window.location.origin + window.location.pathname);
+      
+      try {
+        const apiUrl = `${API_URL}/api/pages/check-config?page_url=${encodeURIComponent(pageUrl)}`;
+        const response = await fetch(apiUrl);
+        
+        if (response.ok) {
+          const data = await response.json();
+          this.pageIsConfigured = data.is_configured || false;
+        } else {
+          this.pageIsConfigured = false;
+        }
+      } catch (error) {
+        console.error('[MindContent SDK] Error checking page configuration:', error);
+        this.pageIsConfigured = false;
+      }
     },
     
     showIntentModal: function() {
@@ -330,7 +354,8 @@
     
     // Fetch and send tracking-only data (user info + visits)
     fetchAndSendTrackingData: async function() {
-      if (!this.config.trackingOnly || !this.iframe || this.pageNotConfigured) {
+      // Always send tracking data if page is configured, regardless of trackingOnly mode
+      if (!this.pageIsConfigured || !this.iframe || this.pageNotConfigured) {
         return;
       }
       
@@ -685,8 +710,8 @@
             }
           });
           
-          // If tracking-only mode, fetch and send user data for sidebar
-          if (this.config.trackingOnly) {
+          // Always fetch and send user data for sidebar if page is configured
+          if (this.pageIsConfigured) {
             setTimeout(() => {
               this.fetchAndSendTrackingData();
             }, 500);
