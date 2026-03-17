@@ -1655,6 +1655,12 @@
   z-index: 999999;
   background: transparent;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+}
+
+#mindcontent-iframe.mc-loaded {
+  opacity: 1;
 }
 
 #mindcontent-iframe.mc-sidebar-open {

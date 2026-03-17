@@ -221,6 +221,7 @@
       console.log('[MindContent SDK] Modal elements:', { startBtn, consentCheckbox, userSelect });
       
       const self = this;
+      let loadedUsers = []; // Store loaded users
       
       userSelect.addEventListener('change', async (e) => {
         const selectedUserId = e.target.value;
@@ -265,6 +266,7 @@
           
           if (data.users && data.users.length > 0) {
             console.log('✅ [MODAL] Adding', data.users.length, 'users to dropdown');
+            loadedUsers = data.users; // Store users for later
             // Update the select dropdown with real users
             const additionalOptions = data.users.map(user => {
               console.log('  - Adding user:', user.full_name, user.user_id);
@@ -287,6 +289,26 @@
         
         const selectedUserId = userSelect.value;
         
+        let loggedUserData = null;
+        
+        // Save logged user data if not anonymous
+        if (selectedUserId !== 'anonymous') {
+          const userData = loadedUsers.find(u => String(u.user_id) === String(selectedUserId));
+          if (userData) {
+            loggedUserData = {
+              user_id: userData.user_id,
+              full_name: userData.full_name,
+              city: userData.city,
+              country: userData.country
+            };
+            localStorage.setItem('mindcontent_logged_user', JSON.stringify(loggedUserData));
+          }
+        } else {
+          // Clear user data when anonymous
+          localStorage.removeItem('mindcontent_logged_user');
+          localStorage.removeItem('mindcontent_user_purchases');
+        }
+        
         localStorage.setItem('mindcontent_simulated_intent', randomIntent);
         localStorage.setItem('mindcontent_selected_user', selectedUserId);
         localStorage.setItem('mindcontent_ai_consent', 'true');
@@ -296,13 +318,31 @@
           modal.remove();
         }
         
-        // Notify iframe of selectedUserId change so it can reconnect WebSocket
+        // Notify iframe of selectedUserId change and logged user data
         const realUserId = (selectedUserId && selectedUserId !== 'anonymous') ? selectedUserId : null;
         if (self.iframe && self.iframe.contentWindow) {
           self.iframe.contentWindow.postMessage({
             type: 'update_selected_user',
             selectedUserId: realUserId
           }, self.config.reactAppUrl);
+          
+          // Send logged user data to iframe (since localStorage is origin-isolated)
+          if (loggedUserData) {
+            self.iframe.contentWindow.postMessage({
+              type: 'LOGGED_USER_DATA',
+              data: loggedUserData
+            }, self.config.reactAppUrl);
+          } else {
+            // Clear both user and purchases when anonymous
+            self.iframe.contentWindow.postMessage({
+              type: 'LOGGED_USER_DATA',
+              data: null
+            }, self.config.reactAppUrl);
+            self.iframe.contentWindow.postMessage({
+              type: 'USER_PURCHASES',
+              data: null
+            }, self.config.reactAppUrl);
+          }
         }
         
         if (selectedUserId !== 'anonymous' && self.config.currentUser) {
@@ -353,6 +393,8 @@
     },
     
     // Fetch and send tracking-only data (user info + visits)
+    // Used ONLY in tracking-only mode (pages without div#mindcontent, no WebSocket)
+    // In normal mode, tracking data comes via WebSocket (tracking_data_loaded event)
     fetchAndSendTrackingData: async function() {
       // Always send tracking data if page is configured, regardless of trackingOnly mode
       if (!this.pageIsConfigured || !this.iframe || this.pageNotConfigured) {
@@ -398,18 +440,23 @@
         return;
       }
       
+      const purchasesData = {
+        user: this.config.currentUser,
+        purchases: this.config.userPurchases || [],
+        totalPurchases: this.config.totalPurchases || 0,
+        loadTime: this.config.purchasesLoadTime || 0,
+        timing: this.config.purchasesTiming || null
+      };
+      
+      // Save purchases to SDK's localStorage
+      localStorage.setItem('mindcontent_user_purchases', JSON.stringify(purchasesData));
+      
       const iframe = document.getElementById('mindcontent-iframe');
       
       if (iframe && iframe.contentWindow) {
         const payload = {
           type: 'USER_PURCHASES',
-          data: {
-            user: this.config.currentUser,
-            purchases: this.config.userPurchases || [],
-            totalPurchases: this.config.totalPurchases || 0,
-            loadTime: this.config.purchasesLoadTime || 0,
-            timing: this.config.purchasesTiming || null
-          }
+          data: purchasesData
         };
         
         iframe.contentWindow.postMessage(payload, this.config.reactAppUrl);
@@ -554,6 +601,10 @@
       
       iframe.onload = () => {
         this.iframe = iframe;
+        // Fade-in suave após carregamento para evitar piscar
+        setTimeout(() => {
+          iframe.classList.add('mc-loaded');
+        }, 100);
         this.setupCommunication();
         this.startScrollTracking();
       };
@@ -582,11 +633,16 @@
       
       iframe.onload = () => {
         this.iframe = iframe;
+        // Fade-in suave após carregamento para evitar piscar
+        setTimeout(() => {
+          iframe.classList.add('mc-loaded');
+        }, 100);
         this.setupCommunication();
         this.startScrollTracking();
       };
       
       iframe.onerror = (e) => {
+        console.error('[MindContent SDK] Error loading iframe:', e);
       };
       
       document.body.appendChild(iframe);
@@ -710,8 +766,38 @@
             }
           });
           
-          // Always fetch and send user data for sidebar if page is configured
-          if (this.pageIsConfigured) {
+          // Send logged user data to iframe if it exists (cross-origin localStorage sync)
+          const loggedUserJson = localStorage.getItem('mindcontent_logged_user');
+          if (loggedUserJson) {
+            try {
+              const loggedUserData = JSON.parse(loggedUserJson);
+              this.sendMessage({
+                type: 'LOGGED_USER_DATA',
+                data: loggedUserData
+              });
+            } catch (e) {
+              console.error('❌ [SDK] Failed to parse logged user data:', e);
+            }
+          }
+          
+          // Send purchases data to iframe if it exists (cross-origin localStorage sync)
+          const purchasesJson = localStorage.getItem('mindcontent_user_purchases');
+          if (purchasesJson) {
+            try {
+              const purchasesData = JSON.parse(purchasesJson);
+              this.sendMessage({
+                type: 'USER_PURCHASES',
+                data: purchasesData
+              });
+            } catch (e) {
+              console.error('❌ [SDK] Failed to parse purchases data:', e);
+            }
+          }
+          
+          // Fetch tracking data based on mode:
+          // - trackingOnly mode (no WebSocket): Fetch via REST API
+          // - Normal mode (with WebSocket): Data comes via tracking_data_loaded event
+          if (this.config.trackingOnly && this.pageIsConfigured) {
             setTimeout(() => {
               this.fetchAndSendTrackingData();
             }, 500);
