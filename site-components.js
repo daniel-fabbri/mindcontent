@@ -17,6 +17,7 @@
             { href: 'index.html', label: 'Home', id: 'home' },
             { href: 'products.html', label: 'Products', id: 'products' },
             { href: 'services.html', label: 'Services', id: 'services' },
+            { href: 'learn.html', label: 'Learn', id: 'learn' },
             { href: 'contact.html', label: 'Contact', id: 'contact' }
         ]
     };

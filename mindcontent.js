@@ -714,7 +714,7 @@
       this.messageHandler = (event) => {
         const message = event.data;
         
-        const validTypes = ['mindcontent_ready', 'mindcontent_log', 'mindcontent_component', 'mindcontent_loading', 'mindcontent_remove_loading', 'initial_decision', 'mindcontent_websocket_closed', 'mindcontent_status_update', 'sidebar_opened', 'sidebar_closed', 'mindcontent_page_not_configured'];
+        const validTypes = ['mindcontent_ready', 'mindcontent_log', 'mindcontent_component', 'mindcontent_loading', 'mindcontent_remove_loading', 'initial_decision', 'mindcontent_websocket_closed', 'mindcontent_status_update', 'sidebar_opened', 'sidebar_closed', 'mindcontent_page_not_configured', 'reset_experience'];
         if (!message || !message.type || !validTypes.includes(message.type)) {
           return;
         }
@@ -726,7 +726,13 @@
           return;
         }
         
-        if (message.type === 'mindcontent_page_not_configured') {
+        if (message.type === 'reset_experience') {
+          // Clear all storage and reload the parent page
+          localStorage.clear();
+          sessionStorage.clear();
+          window.location.reload();
+          return;
+        } else if (message.type === 'mindcontent_page_not_configured') {
           // Page not configured - stop all tracking operations
           console.warn('[MindContent SDK] ⚠️ Page not configured:', message.page_url);
           this.pageNotConfigured = true;
@@ -885,7 +891,25 @@
       const wrapper = document.createElement('div');
       wrapper.className = 'mc-dynamic-component';
       wrapper.setAttribute('data-component-id', component.id);
-      wrapper.innerHTML = componentHtml;
+      wrapper.style.position = 'relative';
+      
+      if (component.tags && Array.isArray(component.tags) && component.tags.length > 0) {
+        const tagsContainer = document.createElement('div');
+        tagsContainer.style.cssText = 'position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; flex-wrap: wrap; max-width: 300px; justify-content: flex-end; z-index: 10;';
+        
+        component.tags.forEach(tag => {
+          const tagBadge = document.createElement('span');
+          tagBadge.style.cssText = 'background-color: #0078d4; color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1); white-space: nowrap;';
+          tagBadge.textContent = tag;
+          tagsContainer.appendChild(tagBadge);
+        });
+        
+        wrapper.appendChild(tagsContainer);
+      }
+      
+      const contentDiv = document.createElement('div');
+      contentDiv.innerHTML = componentHtml;
+      wrapper.appendChild(contentDiv);
       
       targetContainer.appendChild(wrapper);
       
