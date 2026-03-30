@@ -1990,3 +1990,129 @@
   margin: 0 auto;
   display: block;
 }
+/* ==========================================================================
+   Media Image Component - Hero Banner Style
+   ========================================================================== */
+.mc-media-image.mc-hero-banner {
+  position: relative;
+  width: 100%;
+  min-height: 500px;
+  height: auto;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin: 0;
+  padding: 150px 0;
+}
+
+/* Dark overlay for better text readability */
+.mc-hero-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    135deg,
+    rgba(0, 0, 0, 0.6) 0%,
+    rgba(0, 0, 0, 0.3) 100%
+  );
+  z-index: 1;
+}
+
+/* Content container (text on top) */
+.mc-hero-content {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  color: white;
+  max-width: 900px;
+  padding: 0 var(--mc-spacing-xxl);
+  animation: heroFadeIn 1s ease-out;
+}
+
+/* Hero title */
+.mc-hero-title {
+  font-size: var(--mc-font-size-xxxl);
+  font-weight: 700;
+  margin: 0 0 var(--mc-spacing-lg) 0;
+  line-height: 1.2;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  letter-spacing: -0.5px;
+  text-align: center;
+}
+
+/* Hero caption/description */
+.mc-hero-caption {
+  font-size: var(--mc-font-size-lg);
+  font-weight: 400;
+  line-height: 1.6;
+  margin: 0 0 var(--mc-spacing-md) 0;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);
+  opacity: 0.95;
+}
+
+/* Hero subtitle */
+.mc-hero-subtitle {
+  font-size: var(--mc-font-size-base);
+  font-weight: 300;
+  line-height: 1.5;
+  margin: 0;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+  opacity: 0.9;
+}
+
+/* Animation for hero content */
+@keyframes heroFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .mc-media-image.mc-hero-banner {
+    min-height: 400px;
+    padding: 100px 0;
+  }
+  
+  .mc-hero-content {
+    padding: 0 var(--mc-spacing-lg);
+  }
+  
+  .mc-hero-title {
+    font-size: 32px;
+  }
+  
+  .mc-hero-caption {
+    font-size: var(--mc-font-size-base);
+  }
+  
+  .mc-hero-subtitle {
+    font-size: var(--mc-font-size-sm);
+  }
+}
+
+@media (max-width: 480px) {
+  .mc-media-image.mc-hero-banner {
+    min-height: 300px;
+    padding: 80px 0;
+  }
+  
+  .mc-hero-title {
+    font-size: 24px;
+  }
+  
+  .mc-hero-caption {
+    font-size: var(--mc-font-size-sm);
+  }
+}

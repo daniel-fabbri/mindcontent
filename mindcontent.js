@@ -1181,11 +1181,22 @@
           return articleHtml;
         
         case 'cards':
+          // Map Contentful types to CSS types
+          const typeMapping = {
+            'Small Cards': '4up',
+            'Medium Cards': '3up',
+            'Large Cards': '2up',
+            '4up': '4up',
+            '3up': '3up',
+            '2up': '2up'
+          };
+          const cssType = typeMapping[data.type] || '3up'; // Default to 3 columns
+          
           let cardsHtml = '<div class="mc-cards"';
           if (data.id) cardsHtml += ` id="${data.id}"`;
           if (data.classes) cardsHtml += ` class="mc-cards ${data.classes}"`;
           if (data.inlineStyles) cardsHtml += ` style="${data.inlineStyles}"`;
-          if (data.type) cardsHtml += ` data-type="${data.type}"`;
+          cardsHtml += ` data-type="${cssType}"`;
           cardsHtml += '>';
           
           // Render each card
@@ -1761,30 +1772,49 @@
           return socialShareHtml;
         
         case 'accordion':
+          const accordionId = data.id || `accordion-${Date.now()}`;
           let accordionHtml = '<div class="mc-accordion"';
-          if (data.id) accordionHtml += ` id="${data.id}"`;
-          if (data.classes) accordionHtml += ` class="mc-accordion ${data.classes}"`;
-          if (data.inlineStyles) accordionHtml += ` style="${data.inlineStyles}"`;
+          accordionHtml += ` id="${accordionId}"`;
+          
+          // Build classes
+          let accordionClasses = 'mc-accordion';
+          if (data.classes) accordionClasses += ` ${data.classes}`;
+          accordionHtml += ` class="${accordionClasses}"`;
+          
+          // Default styling for modern accordion
+          const accordionDefaultStyle = 'max-width: 900px; margin: 40px auto; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;';
+          if (data.inlineStyles) {
+            accordionHtml += ` style="${data.inlineStyles}"`;
+          } else {
+            accordionHtml += ` style="${accordionDefaultStyle}"`;
+          }
           accordionHtml += '>';
           
           if (data.items && data.items.length > 0) {
             data.items.forEach((item, index) => {
-              const itemId = item.id || `accordion-item-${index}`;
-              accordionHtml += `<div class="mc-accordion-item" data-item-id="${itemId}">`;
-              accordionHtml += `<button class="mc-accordion-header" aria-expanded="false" aria-controls="${itemId}-content">`;
-              accordionHtml += `<span class="mc-accordion-question">${item.question || ''}</span>`;
-              accordionHtml += '<span class="mc-accordion-icon">▼</span>';
+              const itemId = item.id || `accordion-item-${accordionId}-${index}`;
+              const question = item.question || item.title || item.internalName || '';
+              const answer = item.answer || item.description || item.content || '';
+              
+              accordionHtml += `<div class="mc-accordion-item" data-item-id="${itemId}" style="border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px; overflow: hidden; background: white; transition: all 0.3s;">`;
+              
+              // Header/Button
+              accordionHtml += `<button class="mc-accordion-header" onclick="MindContent.toggleAccordion('${itemId}')" aria-expanded="false" aria-controls="${itemId}-content" style="width: 100%; padding: 20px 24px; background: white; border: none; text-align: left; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 16px; font-weight: 600; color: #1f2937; transition: background 0.2s;">`;
+              accordionHtml += `<span class="mc-accordion-question" style="flex: 1; padding-right: 16px;">${question}</span>`;
+              accordionHtml += `<span class="mc-accordion-icon" style="font-size: 20px; color: #6b7280; transition: transform 0.3s; line-height: 1;">▼</span>`;
               accordionHtml += '</button>';
-              accordionHtml += `<div id="${itemId}-content" class="mc-accordion-content" hidden>`;
-              if (item.answer) {
-                accordionHtml += `<div class="mc-accordion-answer">${item.answer}</div>`;
-              }
+              
+              // Content
+              accordionHtml += `<div id="${itemId}-content" class="mc-accordion-content" style="max-height: 0; overflow: hidden; transition: max-height 0.4s ease-out, padding 0.3s ease-out; padding: 0 24px;">`;
+              accordionHtml += `<div class="mc-accordion-answer" style="padding: 20px 0; color: #4b5563; line-height: 1.7; font-size: 15px; border-top: 1px solid #f3f4f6;">${answer}</div>`;
               accordionHtml += '</div>';
+              
               accordionHtml += '</div>';
             });
           }
           
           accordionHtml += '</div>';
+          
           return accordionHtml;
         
         case 'navigation':
@@ -1817,112 +1847,216 @@
         
         case 'mediaimage':
         case 'mediaImage':
-          let mediaImageHtml = '<div class="mc-media-image"';
+          // Hero Banner style with background image and overlay text
+          let mediaImageHtml = '<div class="mc-media-image mc-hero-banner"';
           if (data.id) mediaImageHtml += ` id="${data.id}"`;
           
           // Build class list
-          let mediaImageClasses = 'mc-media-image';
+          let mediaImageClasses = 'mc-media-image mc-hero-banner';
           if (data.classes) mediaImageClasses += ` ${data.classes}`;
           mediaImageHtml += ` class="${mediaImageClasses}"`;
           
-          // Default styling for a nice presentation
-          const defaultStyle = 'max-width: 800px; margin: 40px auto; padding: 24px; background: #f9fafb; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);';
-          if (data.inlineStyles) {
-            mediaImageHtml += ` style="${data.inlineStyles}"`;
-          } else {
-            mediaImageHtml += ` style="${defaultStyle}"`;
+          // Extract image URLs from various possible data structures
+          let imageUrls = [];
+          
+          // Priority 1: data.urls (from backend transformation)
+          if (data.urls && Array.isArray(data.urls) && data.urls.length > 0) {
+            imageUrls = data.urls.filter(url => url); // Remove empty/null values
+          }
+          // Priority 2: data.images as array of URL strings or objects
+          else if (data.images && Array.isArray(data.images) && data.images.length > 0) {
+            imageUrls = data.images
+              .map(img => {
+                // Handle different image data structures
+                if (typeof img === 'string') {
+                  return img;
+                } else if (img && typeof img === 'object') {
+                  // Try various possible URL fields
+                  return img.url || img.src || img.file?.url || null;
+                }
+                return null;
+              })
+              .filter(url => url); // Remove nulls
+          }
+          // Priority 3: Single image field
+          else if (data.image) {
+            const imgUrl = typeof data.image === 'string' 
+              ? data.image 
+              : data.image.url || data.image.src || data.image.file?.url;
+            if (imgUrl) imageUrls = [imgUrl];
+          }
+          
+          // Set background image if available
+          const backgroundImage = imageUrls.length > 0 ? imageUrls[0] : '';
+          if (backgroundImage) {
+            mediaImageHtml += ` style="background-image: url('${backgroundImage}');"`;
           }
           mediaImageHtml += '>';
           
+          // Overlay for better text readability
+          mediaImageHtml += '<div class="mc-hero-overlay"></div>';
+          
+          // Content container (text on top of image)
+          mediaImageHtml += '<div class="mc-hero-content">';
+          
           // Internal Name / Title (if present)
           if (data.internalName) {
-            mediaImageHtml += `<div class="mc-media-image-title" style="font-size: 20px; font-weight: 600; color: #1f2937; margin-bottom: 16px;">${data.internalName}</div>`;
-          }
-          
-          // Image(s)
-          if (data.urls && data.urls.length > 0) {
-            const altText = data.altText || data.internalName || 'Image';
-            mediaImageHtml += `<div class="mc-media-image-container" style="border-radius: 8px; overflow: hidden; margin-bottom: 16px;">`;
-            
-            if (data.urls.length === 1) {
-              // Single image
-              mediaImageHtml += `<img src="${data.urls[0]}" alt="${altText}" class="mc-media-image-element" loading="lazy" style="width: 100%; height: auto; display: block;">`;
-            } else {
-              // Multiple images - gallery style
-              mediaImageHtml += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px;">`;
-              data.urls.forEach((url, idx) => {
-                const imgAlt = `${altText} ${idx + 1}`;
-                mediaImageHtml += `<img src="${url}" alt="${imgAlt}" class="mc-media-image-element" loading="lazy" style="width: 100%; height: auto; display: block; border-radius: 4px;">`;
-              });
-              mediaImageHtml += `</div>`;
-            }
-            
-            mediaImageHtml += `</div>`;
-          } else if (data.images && Array.isArray(data.images)) {
-            // Alternative structure: images as array
-            const altText = data.altText || data.internalName || 'Image';
-            mediaImageHtml += `<div class="mc-media-image-container" style="border-radius: 8px; overflow: hidden; margin-bottom: 16px;">`;
-            
-            if (data.images.length === 1) {
-              const imgData = data.images[0];
-              const imgUrl = imgData.url || imgData;
-              mediaImageHtml += `<img src="${imgUrl}" alt="${altText}" class="mc-media-image-element" loading="lazy" style="width: 100%; height: auto; display: block;">`;
-            } else {
-              mediaImageHtml += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px;">`;
-              data.images.forEach((imgData, idx) => {
-                const imgUrl = typeof imgData === 'string' ? imgData : imgData.url;
-                const imgAlt = `${altText} ${idx + 1}`;
-                mediaImageHtml += `<img src="${imgUrl}" alt="${imgAlt}" class="mc-media-image-element" loading="lazy" style="width: 100%; height: auto; display: block; border-radius: 4px;">`;
-              });
-              mediaImageHtml += `</div>`;
-            }
-            
-            mediaImageHtml += `</div>`;
-          }
-          
-          // Alt Text (if different from caption and exists)
-          if (data.altText && data.altText !== data.caption) {
-            mediaImageHtml += `<div class="mc-media-image-alt" style="font-size: 12px; color: #6b7280; font-style: italic; margin-bottom: 8px;">Alt text: ${data.altText}</div>`;
+            mediaImageHtml += `<h1 class="mc-hero-title">${data.internalName}</h1>`;
           }
           
           // Caption / Description
           if (data.caption) {
-            mediaImageHtml += `<figcaption class="mc-media-image-caption" style="font-size: 14px; color: #4b5563; line-height: 1.6; text-align: center;">${data.caption}</figcaption>`;
+            mediaImageHtml += `<p class="mc-hero-caption">${data.caption}</p>`;
           }
           
-          mediaImageHtml += '</div>';
+          // Alt Text as subtitle (if different from caption and exists)
+          if (data.altText && data.altText !== data.caption && data.altText !== data.internalName) {
+            mediaImageHtml += `<p class="mc-hero-subtitle">${data.altText}</p>`;
+          }
+          
+          mediaImageHtml += '</div>'; // End mc-hero-content
+          mediaImageHtml += '</div>'; // End mc-hero-banner
           return mediaImageHtml;
         
         case 'mediavideo':
         case 'mediaVideo':
           let mediaVideoHtml = '<div class="mc-media-video"';
           if (data.id) mediaVideoHtml += ` id="${data.id}"`;
-          if (data.classes) mediaVideoHtml += ` class="mc-media-video ${data.classes}"`;
-          if (data.inlineStyles) mediaVideoHtml += ` style="${data.inlineStyles}"`;
+          
+          // Build class list
+          let mediaVideoClasses = 'mc-media-video';
+          if (data.classes) mediaVideoClasses += ` ${data.classes}`;
+          mediaVideoHtml += ` class="${mediaVideoClasses}"`;
+          
+          // Default styling for a modern video container
+          const mediaVideoDefaultStyle = 'max-width: 900px; margin: 40px auto; padding: 0; background: #000; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.3);';
+          if (data.inlineStyles) {
+            mediaVideoHtml += ` style="${data.inlineStyles}"`;
+          } else {
+            mediaVideoHtml += ` style="${mediaVideoDefaultStyle}"`;
+          }
           mediaVideoHtml += '>';
           
-          if (data.title) {
-            mediaVideoHtml += `<div class="mc-media-video-title">${data.title}</div>`;
+          // Extract video URLs from various possible data structures
+          let videoUrls = [];
+          
+          // Priority 1: data.videoUrls (from backend transformation)
+          if (data.videoUrls && Array.isArray(data.videoUrls) && data.videoUrls.length > 0) {
+            videoUrls = data.videoUrls.filter(url => url);
+          }
+          // Priority 2: data.urls as array
+          else if (data.urls && Array.isArray(data.urls) && data.urls.length > 0) {
+            videoUrls = data.urls.filter(url => url);
+          }
+          // Priority 3: data.videoUrl single string
+          else if (data.videoUrl) {
+            videoUrls = [data.videoUrl];
           }
           
-          if (data.urls && data.urls.length > 0) {
-            mediaVideoHtml += '<video class="mc-media-video-element" controls';
-            if (data.isAutoPlay) mediaVideoHtml += ' autoplay muted';
-            if (data.posterImage && data.posterImage.urls && data.posterImage.urls.length > 0) {
-              mediaVideoHtml += ` poster="${data.posterImage.urls[0]}"`;
+          // Extract poster URL
+          let posterUrl = null;
+          if (data.posterUrl) {
+            posterUrl = data.posterUrl;
+          } else if (data.posterImage) {
+            if (typeof data.posterImage === 'string') {
+              posterUrl = data.posterImage;
+            } else if (data.posterImage.url) {
+              posterUrl = data.posterImage.url;
+            } else if (data.posterImage.urls && data.posterImage.urls.length > 0) {
+              posterUrl = data.posterImage.urls[0];
             }
-            mediaVideoHtml += '>';
-            mediaVideoHtml += `<source src="${data.urls[0]}" type="video/mp4">`;
-            mediaVideoHtml += 'Your browser does not support the video tag.';
-            mediaVideoHtml += '</video>';
+          }
+          
+          // Render video if we have URLs
+          if (videoUrls.length > 0) {
+            // Video wrapper with aspect ratio
+            mediaVideoHtml += '<div class="mc-media-video-wrapper" style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; background: #000;">';
             
-            if (data.duration) {
-              mediaVideoHtml += `<div class="mc-media-video-duration">⏱️ ${data.duration}</div>`;
+            // Video element
+            mediaVideoHtml += '<video class="mc-media-video-element" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;" controls';
+            
+            // Attributes
+            if (data.isAutoPlay) mediaVideoHtml += ' autoplay muted loop playsinline';
+            if (posterUrl) mediaVideoHtml += ` poster="${posterUrl}"`;
+            mediaVideoHtml += '>';
+            
+            // Video sources
+            videoUrls.forEach(url => {
+              const extension = url.split('.').pop().toLowerCase().split('?')[0];
+              let mimeType = 'video/mp4';
+              
+              if (extension === 'webm') mimeType = 'video/webm';
+              else if (extension === 'ogg' || extension === 'ogv') mimeType = 'video/ogg';
+              else if (extension === 'mov') mimeType = 'video/quicktime';
+              
+              mediaVideoHtml += `<source src="${url}" type="${mimeType}">`;
+            });
+            
+            mediaVideoHtml += '<p style="color: white; padding: 20px; text-align: center;">Your browser does not support the video tag. <a href="' + videoUrls[0] + '" style="color: #4CAF50;">Download the video</a></p>';
+            mediaVideoHtml += '</video>';
+            mediaVideoHtml += '</div>'; // end video-wrapper
+            
+            // Video info panel
+            if (data.title || data.description || data.duration || data.uploadedDate || data.transcriptUrl) {
+              mediaVideoHtml += '<div class="mc-media-video-info" style="padding: 20px; background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%);">';
+              
+              // Title
+              if (data.title || data.internalName) {
+                const videoTitle = data.title || data.internalName;
+                mediaVideoHtml += `<h3 class="mc-media-video-title" style="margin: 0 0 8px 0; color: #fff; font-size: 20px; font-weight: 600;">${videoTitle}</h3>`;
+              }
+              
+              // Description
+              if (data.description) {
+                mediaVideoHtml += `<p class="mc-media-video-description" style="margin: 0 0 12px 0; color: #b0b0b0; font-size: 14px; line-height: 1.6;">${data.description}</p>`;
+              }
+              
+              // Meta info (duration, date)
+              if (data.duration || data.uploadedDate) {
+                mediaVideoHtml += '<div class="mc-media-video-meta" style="display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: #888; margin-bottom: 12px;">';
+                
+                if (data.duration) {
+                  // Parse ISO 8601 duration (PT0M15S) to readable format
+                  let durationText = data.duration;
+                  const durationMatch = data.duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+                  if (durationMatch) {
+                    const hours = durationMatch[1] ? parseInt(durationMatch[1]) : 0;
+                    const minutes = durationMatch[2] ? parseInt(durationMatch[2]) : 0;
+                    const seconds = durationMatch[3] ? parseInt(durationMatch[3]) : 0;
+                    
+                    if (hours > 0) {
+                      durationText = `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    } else {
+                      durationText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                    }
+                  }
+                  mediaVideoHtml += `<span style="display: flex; align-items: center; gap: 4px;"><svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>${durationText}</span>`;
+                }
+                
+                if (data.uploadedDate) {
+                  const uploadDate = new Date(data.uploadedDate);
+                  const dateText = uploadDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+                  mediaVideoHtml += `<span style="display: flex; align-items: center; gap: 4px;"><svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>${dateText}</span>`;
+                }
+                
+                mediaVideoHtml += '</div>';
+              }
+              
+              // Transcript link
+              if (data.transcriptUrl) {
+                mediaVideoHtml += `<a href="${data.transcriptUrl}" class="mc-media-video-transcript" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: #3a3a3a; color: #fff; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 500; transition: background 0.2s;" onmouseover="this.style.background='#4a4a4a'" onmouseout="this.style.background='#3a3a3a'"><svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"/></svg>View Transcript</a>`;
+              }
+              
+              mediaVideoHtml += '</div>'; // end video-info
             }
-          }
-          
-          if (data.description) {
-            mediaVideoHtml += `<div class="mc-media-video-description">${data.description}</div>`;
+          } else {
+            // No video found - show placeholder
+            mediaVideoHtml += `<div class="mc-media-video-placeholder" style="padding: 80px 40px; text-align: center; background: #1a1a1a; color: #666;">
+              <svg style="width: 64px; height: 64px; margin: 0 auto 16px; opacity: 0.4;" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/>
+              </svg>
+              <p style="margin: 0; font-size: 16px; color: #888;">No video available</p>
+            </div>`;
           }
           
           mediaVideoHtml += '</div>';
@@ -2755,6 +2889,37 @@
       if (this.iframe) {
         this.iframe.remove();
         this.iframe = null;
+      }
+    },
+    
+    toggleAccordion: function(itemId) {
+      const item = document.querySelector('[data-item-id="' + itemId + '"]');
+      if (!item) return;
+      
+      const button = item.querySelector('.mc-accordion-header');
+      const content = item.querySelector('.mc-accordion-content');
+      const icon = item.querySelector('.mc-accordion-icon');
+      
+      if (!button || !content || !icon) return;
+      
+      const isExpanded = button.getAttribute('aria-expanded') === 'true';
+      
+      if (isExpanded) {
+        // Close
+        button.setAttribute('aria-expanded', 'false');
+        content.style.maxHeight = '0';
+        content.style.padding = '0 24px';
+        icon.style.transform = 'rotate(0deg)';
+        item.style.boxShadow = 'none';
+        button.style.background = 'white';
+      } else {
+        // Open
+        button.setAttribute('aria-expanded', 'true');
+        content.style.maxHeight = content.scrollHeight + 60 + 'px';
+        content.style.padding = '0 24px';
+        icon.style.transform = 'rotate(180deg)';
+        item.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+        button.style.background = '#f9fafb';
       }
     },
     
