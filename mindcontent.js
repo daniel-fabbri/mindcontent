@@ -402,6 +402,9 @@
       }
     },
     
+    // DEPRECATED: This function is no longer used in tracking-only mode
+    // Tracking data is now sent automatically via WebSocket in both normal and tracking-only modes
+    // Kept for reference only
     // Fetch and send tracking-only data (user info + visits)
     // Used ONLY in tracking-only mode (pages without div#mindcontent, no WebSocket)
     // In normal mode, tracking data comes via WebSocket (tracking_data_loaded event)
@@ -811,14 +814,8 @@
             }
           }
           
-          // Fetch tracking data based on mode:
-          // - trackingOnly mode (no WebSocket): Fetch via REST API
-          // - Normal mode (with WebSocket): Data comes via tracking_data_loaded event
-          if (this.config.trackingOnly && this.pageIsConfigured) {
-            setTimeout(() => {
-              this.fetchAndSendTrackingData();
-            }, 500);
-          }
+          // Note: In trackingOnly mode, tracking data is now sent automatically via WebSocket
+          // No need for REST API call anymore - WebSocket handles it in both modes
         } else if (message.type === 'mindcontent_log') {
         } else if (message.type === 'mindcontent_component') {
           
@@ -2691,13 +2688,26 @@
        * Initialize mouse tracking for heatmap
        * Captures mouse positions with throttling and sends in batches
        */
-      if (this.websocketClosed || this.pageNotConfigured) {
+      // In tracking-only mode, allow heatmap even if websocketClosed
+      // because the WebSocket should stay open for heatmap data
+      if (this.pageNotConfigured) {
         return;
       }
 
       // Mouse move listener with throttle
       document.addEventListener('mousemove', (e) => {
-        if (this.websocketClosed || this.pageNotConfigured) {
+        // Always stop if page is not configured
+        if (this.pageNotConfigured) {
+          if (this.mouseMoveTimeout) {
+            clearTimeout(this.mouseMoveTimeout);
+            this.mouseMoveTimeout = null;
+          }
+          return;
+        }
+        
+        // In normal mode (not tracking-only), stop if websocket closed
+        // In tracking-only mode, websocket should never close, so always allow
+        if (!this.config.trackingOnly && this.websocketClosed) {
           if (this.mouseMoveTimeout) {
             clearTimeout(this.mouseMoveTimeout);
             this.mouseMoveTimeout = null;
@@ -2766,7 +2776,14 @@
         return;
       }
 
-      if (this.websocketClosed || this.pageNotConfigured) {
+      // Always stop if page is not configured
+      if (this.pageNotConfigured) {
+        return;
+      }
+      
+      // In normal mode (not tracking-only), stop if websocket closed
+      // In tracking-only mode, websocket should never close, so always allow
+      if (!this.config.trackingOnly && this.websocketClosed) {
         return;
       }
 
