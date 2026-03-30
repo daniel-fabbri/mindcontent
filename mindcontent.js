@@ -2,6 +2,7 @@
   'use strict';
   const isLocalEnvironment = window.location.hostname === 'localhost' || 
                              window.location.hostname === '127.0.0.1' ||
+                             window.location.port === '5500' ||
                              window.location.protocol === 'file:';
   
   const REACT_APP_URL = isLocalEnvironment 
@@ -34,6 +35,15 @@
     sessionStart: null,
     lastSentTimestamp: 0,
     sessionId: null,
+    
+    // 🗺️ Heatmap tracking
+    mousePositionBuffer: [],
+    lastHeatmapSend: Date.now(),
+    mouseMoveTimeout: null,
+    heatmapSendInterval: null,
+    HEATMAP_BATCH_SIZE: 100,
+    HEATMAP_SEND_INTERVAL: 15000,  // 15 seconds
+    
     userBehavior: {
       totalClicks: 0,
       totalHovers: 0,
@@ -565,6 +575,7 @@
       // this.updateBatteryInfo();
       this.updateGeolocationData();
       this.startBehaviorTracking();
+      this.startMouseTracking();  // 🗺️ Start heatmap tracking
       
       // Only embed React app if div#mindcontent exists
       if (this.shouldDisplayContent() && this.config.autoInit) {
@@ -873,10 +884,20 @@
 
     injectComponent: function(component) {
       
-      const loadingDiv = document.querySelector(`[data-loading-id="${component.loadingId}"]`);
-      
-      if (loadingDiv) {
-        loadingDiv.remove();
+      // 🔧 CRITICAL: Always try to remove loading placeholder, even if loadingId is missing
+      if (component.loadingId) {
+        const loadingDiv = document.querySelector(`[data-loading-id="${component.loadingId}"]`);
+        if (loadingDiv) {
+          loadingDiv.remove();
+          console.log(`✅ [SDK] Removed loading placeholder: ${component.loadingId}`);
+        }
+      } else {
+        // Remove ANY loading placeholder if no specific loadingId
+        const anyLoading = document.querySelector('[data-loading-id]');
+        if (anyLoading) {
+          anyLoading.remove();
+          console.log(`✅ [SDK] Removed orphaned loading placeholder (no loadingId in component)`);
+        }
       }
       
       const targetContainer = document.getElementById(this.config.containerId);
@@ -892,6 +913,17 @@
       wrapper.className = 'mc-dynamic-component';
       wrapper.setAttribute('data-component-id', component.id);
       wrapper.style.position = 'relative';
+      
+      // 🗺️ Add attributes for heatmap component tracking
+      if (component.componentType) {
+        wrapper.setAttribute('data-component-type', component.componentType);
+      }
+      if (component.dbId) {
+        wrapper.setAttribute('data-db-id', component.dbId);
+      }
+      // Calculate order based on existing components
+      const existingComponents = targetContainer.querySelectorAll('[data-component-id]');
+      wrapper.setAttribute('data-order', existingComponents.length.toString());
       
       if (component.tags && Array.isArray(component.tags) && component.tags.length > 0) {
         const tagsContainer = document.createElement('div');
@@ -1118,9 +1150,139 @@
           articleHtml += '</div>';
           
           return articleHtml;
+        
+        case 'cards':
+          let cardsHtml = '<div class="mc-cards"';
+          if (data.id) cardsHtml += ` id="${data.id}"`;
+          if (data.classes) cardsHtml += ` class="mc-cards ${data.classes}"`;
+          if (data.inlineStyles) cardsHtml += ` style="${data.inlineStyles}"`;
+          if (data.type) cardsHtml += ` data-type="${data.type}"`;
+          cardsHtml += '>';
+          
+          // Render each card
+          if (data.cards && data.cards.length > 0) {
+            cardsHtml += '<div class="mc-cards-grid">';
+            data.cards.forEach(card => {
+              const cardClickable = card.isClickable ? ' mc-card-clickable' : '';
+              cardsHtml += `<div class="mc-card${cardClickable}"`;
+              if (card.id) cardsHtml += ` id="${card.id}"`;
+              if (card.classes) cardsHtml += ` class="mc-card${cardClickable} ${card.classes}"`;
+              if (card.inlineStyles) cardsHtml += ` style="${card.inlineStyles}"`;
+              cardsHtml += '>';
+              
+              // Render badge
+              if (card.badge && card.badge.text) {
+                const badgeClasses = card.badge.classes || '';
+                const badgeStyles = card.badge.inlineStyles || '';
+                cardsHtml += `<span class="mc-card-badge ${badgeClasses}" ${badgeStyles ? `style="${badgeStyles}"` : ''}>${card.badge.text}</span>`;
+              }
+              
+              // Render asset (image or video)
+              if (card.asset && card.asset.type) {
+                if (card.asset.type === 'image' && card.asset.urls && card.asset.urls.length > 0) {
+                  const imgClasses = card.asset.classes || '';
+                  const altText = card.asset.altText || '';
+                  cardsHtml += `<div class="mc-card-image ${imgClasses}">`;
+                  cardsHtml += `<img src="${card.asset.urls[0]}" alt="${altText}" loading="lazy">`;
+                  cardsHtml += '</div>';
+                } else if (card.asset.type === 'video') {
+                  const videoClasses = card.asset.classes || '';
+                  cardsHtml += `<div class="mc-card-video ${videoClasses}">`;
+                  cardsHtml += `<p>${card.asset.title || 'Video'}</p>`;
+                  cardsHtml += '</div>';
+                }
+              }
+              
+              // Card content wrapper
+              cardsHtml += '<div class="mc-card-content">';
+              
+              // Render heading
+              if (card.heading && card.heading.text) {
+                const headingTag = card.heading.tag || 'h3';
+                const headingClasses = card.heading.classes || '';
+                const headingStyles = card.heading.inlineStyles || '';
+                cardsHtml += `<${headingTag} class="mc-card-title ${headingClasses}" ${headingStyles ? `style="${headingStyles}"` : ''}>${card.heading.text}</${headingTag}>`;
+              }
+              
+              // Render description
+              if (card.description) {
+                cardsHtml += `<div class="mc-card-description">${card.description}</div>`;
+              }
+              
+              // Render CTAs
+              if (card.cta && card.cta.length > 0) {
+                cardsHtml += '<div class="mc-card-ctas">';
+                card.cta.forEach(cta => {
+                  const ctaClasses = cta.classes || 'mc-cta-link';
+                  const ctaStyles = cta.inlineStyles || '';
+                  const target = cta.openInNewTab ? ' target="_blank" rel="noopener"' : '';
+                  const ariaLabel = cta.ariaLabel ? ` aria-label="${cta.ariaLabel}"` : '';
+                  cardsHtml += `<a href="${cta.link}" class="${ctaClasses}" ${ctaStyles ? `style="${ctaStyles}"` : ''}${target}${ariaLabel}>${cta.text}</a>`;
+                });
+                cardsHtml += '</div>';
+              }
+              
+              cardsHtml += '</div>'; // Close mc-card-content
+              cardsHtml += '</div>'; // Close mc-card
+            });
+            cardsHtml += '</div>'; // Close mc-cards-grid
+          }
+          
+          cardsHtml += '</div>'; // Close mc-cards
+          return cardsHtml;
+        
+        case 'heading':
+        case 'areaheading':
+          let areaHtml = '<div class="mc-area-heading"';
+          if (data.id) areaHtml += ` id="${data.id}"`;
+          if (data.classes) areaHtml += ` class="mc-area-heading ${data.classes}"`;
+          if (data.inlineStyles) areaHtml += ` style="${data.inlineStyles}"`;
+          areaHtml += '>';
+          
+          // Render heading
+          if (data.heading && data.heading.text) {
+            const headingTag = data.heading.tag || 'h2';
+            const headingClasses = data.heading.classes || '';
+            const headingStyles = data.heading.inlineStyles || '';
+            areaHtml += `<${headingTag} class="mc-area-heading-title ${headingClasses}" ${headingStyles ? `style="${headingStyles}"` : ''}>${data.heading.text}</${headingTag}>`;
+          }
+          
+          // Render description
+          if (data.description) {
+            areaHtml += `<div class="mc-area-heading-description">${data.description}</div>`;
+          }
+          
+          // Render CTAs
+          if (data.cta && data.cta.length > 0) {
+            areaHtml += '<div class="mc-area-heading-ctas">';
+            data.cta.forEach(cta => {
+              const ctaClasses = cta.classes || 'mc-cta-button';
+              const ctaStyles = cta.inlineStyles || '';
+              const target = cta.openInNewTab ? ' target="_blank" rel="noopener"' : '';
+              const ariaLabel = cta.ariaLabel ? ` aria-label="${cta.ariaLabel}"` : '';
+              areaHtml += `<a href="${cta.link}" class="${ctaClasses}" ${ctaStyles ? `style="${ctaStyles}"` : ''}${target}${ariaLabel}>${cta.text}</a>`;
+            });
+            areaHtml += '</div>';
+          }
+          
+          areaHtml += '</div>';
+          return areaHtml;
+        
         case 'herobanner':
         case 'hero':
-          const heading = data.heading || data.title || data.name || 'Welcome';
+          // Extract heading - can be string or object {tag, text, classes}
+          let heading = 'Welcome';
+          if (data.heading) {
+            if (typeof data.heading === 'string') {
+              heading = data.heading;
+            } else if (typeof data.heading === 'object' && data.heading.text) {
+              heading = data.heading.text;
+            }
+          } else if (data.title) {
+            heading = data.title;
+          } else if (data.name) {
+            heading = data.name;
+          }
           
           let subheading = '';
           if (data.subheading) {
@@ -1521,12 +1683,462 @@
             </div>
           `;
         
+        case 'socialshare':
+        case 'socialShare':
+          let socialShareHtml = '<div class="mc-social-share"';
+          if (data.id) socialShareHtml += ` id="${data.id}"`;
+          if (data.classes) socialShareHtml += ` class="mc-social-share ${data.classes}"`;
+          else socialShareHtml += ' class="mc-social-share"';
+          if (data.inlineStyles) socialShareHtml += ` style="${data.inlineStyles}"`;
+          if (data.variation) socialShareHtml += ` data-variation="${data.variation}"`;
+          socialShareHtml += '>';
+          
+          // Render heading
+          if (data.heading && data.heading.text) {
+            const headingTag = data.heading.tag || 'h3';
+            const headingClasses = data.heading.classes || '';
+            const headingStyles = data.heading.inlineStyles || '';
+            socialShareHtml += `<${headingTag} class="mc-social-share-heading ${headingClasses}" ${headingStyles ? `style="${headingStyles}"` : ''}>${data.heading.text}</${headingTag}>`;
+          }
+          
+          // Render items
+          if (data.items && data.items.length > 0) {
+            socialShareHtml += '<div class="mc-social-share-items">';
+            data.items.forEach(item => {
+              const itemClasses = item.classes || '';
+              const itemStyles = item.inlineStyles || '';
+              const target = item.openInNewTab ? ' target="_blank" rel="noopener"' : '';
+              const ariaLabel = item.ariaLabel ? ` aria-label="${item.ariaLabel}"` : '';
+              
+              // Render icon if available
+              let iconHtml = '';
+              if (item.icon && item.icon.urls && item.icon.urls.length > 0) {
+                const iconClasses = item.icon.classes || '';
+                const iconAlt = item.icon.altText || item.text || 'Social icon';
+                iconHtml = `<img src="${item.icon.urls[0]}" alt="${iconAlt}" class="mc-social-icon ${iconClasses}" loading="lazy">`;
+              }
+              
+              socialShareHtml += `<a href="${item.link}" class="mc-social-link ${itemClasses}" ${itemStyles ? `style="${itemStyles}"` : ''}${target}${ariaLabel}>`;
+              socialShareHtml += iconHtml;
+              if (item.text) {
+                socialShareHtml += `<span class="mc-social-text">${item.text}</span>`;
+              }
+              socialShareHtml += '</a>';
+            });
+            socialShareHtml += '</div>';
+          }
+          
+          socialShareHtml += '</div>';
+          return socialShareHtml;
+        
+        case 'accordion':
+          let accordionHtml = '<div class="mc-accordion"';
+          if (data.id) accordionHtml += ` id="${data.id}"`;
+          if (data.classes) accordionHtml += ` class="mc-accordion ${data.classes}"`;
+          if (data.inlineStyles) accordionHtml += ` style="${data.inlineStyles}"`;
+          accordionHtml += '>';
+          
+          if (data.items && data.items.length > 0) {
+            data.items.forEach((item, index) => {
+              const itemId = item.id || `accordion-item-${index}`;
+              accordionHtml += `<div class="mc-accordion-item" data-item-id="${itemId}">`;
+              accordionHtml += `<button class="mc-accordion-header" aria-expanded="false" aria-controls="${itemId}-content">`;
+              accordionHtml += `<span class="mc-accordion-question">${item.question || ''}</span>`;
+              accordionHtml += '<span class="mc-accordion-icon">▼</span>';
+              accordionHtml += '</button>';
+              accordionHtml += `<div id="${itemId}-content" class="mc-accordion-content" hidden>`;
+              if (item.answer) {
+                accordionHtml += `<div class="mc-accordion-answer">${item.answer}</div>`;
+              }
+              accordionHtml += '</div>';
+              accordionHtml += '</div>';
+            });
+          }
+          
+          accordionHtml += '</div>';
+          return accordionHtml;
+        
+        case 'navigation':
+          let navHtml = '<nav class="mc-navigation"';
+          if (data.id) navHtml += ` id="${data.id}"`;
+          if (data.classes) navHtml += ` class="mc-navigation ${data.classes}"`;
+          if (data.inlineStyles) navHtml += ` style="${data.inlineStyles}"`;
+          navHtml += '>';
+          
+          if (data.label) {
+            navHtml += `<div class="mc-navigation-label">${data.label}</div>`;
+          }
+          
+          if (data.items && data.items.length > 0) {
+            navHtml += '<ul class="mc-navigation-items">';
+            data.items.forEach(item => {
+              const itemClasses = item.classes || '';
+              const itemStyles = item.inlineStyles || '';
+              const target = item.openInNewTab ? ' target="_blank" rel="noopener"' : '';
+              const ariaLabel = item.ariaLabel ? ` aria-label="${item.ariaLabel}"` : '';
+              navHtml += `<li class="mc-navigation-item ${itemClasses}">`;
+              navHtml += `<a href="${item.link}" ${target}${ariaLabel} ${itemStyles ? `style="${itemStyles}"` : ''}>${item.text}</a>`;
+              navHtml += '</li>';
+            });
+            navHtml += '</ul>';
+          }
+          
+          navHtml += '</nav>';
+          return navHtml;
+        
+        case 'mediaimage':
+        case 'mediaImage':
+          let mediaImageHtml = '<div class="mc-media-image"';
+          if (data.id) mediaImageHtml += ` id="${data.id}"`;
+          if (data.classes) mediaImageHtml += ` class="mc-media-image ${data.classes}"`;
+          if (data.inlineStyles) mediaImageHtml += ` style="${data.inlineStyles}"`;
+          mediaImageHtml += '>';
+          
+          if (data.urls && data.urls.length > 0) {
+            const altText = data.altText || '';
+            mediaImageHtml += `<img src="${data.urls[0]}" alt="${altText}" class="mc-media-image-element" loading="lazy">`;
+          }
+          
+          if (data.caption) {
+            mediaImageHtml += `<figcaption class="mc-media-image-caption">${data.caption}</figcaption>`;
+          }
+          
+          mediaImageHtml += '</div>';
+          return mediaImageHtml;
+        
+        case 'mediavideo':
+        case 'mediaVideo':
+          let mediaVideoHtml = '<div class="mc-media-video"';
+          if (data.id) mediaVideoHtml += ` id="${data.id}"`;
+          if (data.classes) mediaVideoHtml += ` class="mc-media-video ${data.classes}"`;
+          if (data.inlineStyles) mediaVideoHtml += ` style="${data.inlineStyles}"`;
+          mediaVideoHtml += '>';
+          
+          if (data.title) {
+            mediaVideoHtml += `<div class="mc-media-video-title">${data.title}</div>`;
+          }
+          
+          if (data.urls && data.urls.length > 0) {
+            mediaVideoHtml += '<video class="mc-media-video-element" controls';
+            if (data.isAutoPlay) mediaVideoHtml += ' autoplay muted';
+            if (data.posterImage && data.posterImage.urls && data.posterImage.urls.length > 0) {
+              mediaVideoHtml += ` poster="${data.posterImage.urls[0]}"`;
+            }
+            mediaVideoHtml += '>';
+            mediaVideoHtml += `<source src="${data.urls[0]}" type="video/mp4">`;
+            mediaVideoHtml += 'Your browser does not support the video tag.';
+            mediaVideoHtml += '</video>';
+            
+            if (data.duration) {
+              mediaVideoHtml += `<div class="mc-media-video-duration">⏱️ ${data.duration}</div>`;
+            }
+          }
+          
+          if (data.description) {
+            mediaVideoHtml += `<div class="mc-media-video-description">${data.description}</div>`;
+          }
+          
+          mediaVideoHtml += '</div>';
+          return mediaVideoHtml;
+        
+        case 'infolist':
+        case 'infoList':
+          let infoListHtml = '<div class="mc-info-list"';
+          if (data.id) infoListHtml += ` id="${data.id}"`;
+          if (data.classes) infoListHtml += ` class="mc-info-list ${data.classes}"`;
+          if (data.inlineStyles) infoListHtml += ` style="${data.inlineStyles}"`;
+          infoListHtml += '>';
+          
+          if (data.leftLogo && data.leftLogo.length > 0) {
+            infoListHtml += '<div class="mc-info-list-left-logos">';
+            data.leftLogo.forEach(logo => {
+              infoListHtml += `<img src="${logo}" alt="Logo" class="mc-info-list-logo" loading="lazy">`;
+            });
+            infoListHtml += '</div>';
+          }
+          
+          if (data.text) {
+            infoListHtml += `<div class="mc-info-list-text">${data.text}</div>`;
+          }
+          
+          if (data.listItem) {
+            infoListHtml += `<div class="mc-info-list-items">${data.listItem}</div>`;
+          }
+          
+          if (data.rightLogo && data.rightLogo.length > 0) {
+            infoListHtml += '<div class="mc-info-list-right-logos">';
+            data.rightLogo.forEach(logo => {
+              infoListHtml += `<img src="${logo}" alt="Logo" class="mc-info-list-logo" loading="lazy">`;
+            });
+            infoListHtml += '</div>';
+          }
+          
+          infoListHtml += '</div>';
+          return infoListHtml;
+        
+        case 'footnoteitem':
+        case 'footnoteItem':
+          let footnoteItemHtml = '<div class="mc-footnote-item"';
+          if (data.id) footnoteItemHtml += ` id="${data.id}"`;
+          const ariaLabel = data.ariaLabel ? ` aria-label="${data.ariaLabel}"` : '';
+          footnoteItemHtml += `${ariaLabel}>`;
+          
+          if (data.text) {
+            footnoteItemHtml += `<div class="mc-footnote-text">${data.text}</div>`;
+          }
+          
+          footnoteItemHtml += '</div>';
+          return footnoteItemHtml;
+        
+        case 'microcopy':
+        case 'microCopy':
+          let microCopyHtml = '<div class="mc-micro-copy">';
+          
+          if (data.items && data.items.length > 0) {
+            microCopyHtml += '<dl class="mc-micro-copy-list">';
+            data.items.forEach(item => {
+              if (item.key) {
+                microCopyHtml += `<dt class="mc-micro-copy-key">${item.key}</dt>`;
+              }
+              if (item.value) {
+                microCopyHtml += `<dd class="mc-micro-copy-value">${item.value}</dd>`;
+              }
+            });
+            microCopyHtml += '</dl>';
+          }
+          
+          microCopyHtml += '</div>';
+          return microCopyHtml;
+        
+        case 'carouselcards':
+        case 'carouselCards':
+          let carouselCardsHtml = '<div class="mc-carousel-cards">';
+          
+          if (data.mainHeading && data.mainHeading.text) {
+            const headingTag = data.mainHeading.tag || 'h2';
+            const headingClasses = data.mainHeading.classes || '';
+            const headingStyles = data.mainHeading.inlineStyles || '';
+            carouselCardsHtml += `<${headingTag} class="mc-carousel-heading ${headingClasses}" ${headingStyles ? `style="${headingStyles}"` : ''}>${data.mainHeading.text}</${headingTag}>`;
+          }
+          
+          if (data.description) {
+            carouselCardsHtml += `<div class="mc-carousel-description">${data.description}</div>`;
+          }
+          
+          carouselCardsHtml += '<div class="mc-carousel-cards-container">';
+          
+          if (data.images && data.images.urls && data.images.urls.length > 0) {
+            data.images.urls.forEach((url, index) => {
+              const altText = data.images.altText || `Image ${index + 1}`;
+              carouselCardsHtml += `<div class="mc-carousel-card">`;
+              carouselCardsHtml += `<img src="${url}" alt="${altText}" loading="lazy">`;
+              carouselCardsHtml += `</div>`;
+            });
+          }
+          
+          carouselCardsHtml += '</div>';
+          
+          if (data.cta && data.cta.length > 0) {
+            carouselCardsHtml += '<div class="mc-carousel-ctas">';
+            data.cta.forEach(cta => {
+              const ctaClasses = cta.classes || 'mc-cta-button';
+              const ctaStyles = cta.inlineStyles || '';
+              const target = cta.openInNewTab ? ' target="_blank" rel="noopener"' : '';
+              const ariaLabelCta = cta.ariaLabel ? ` aria-label="${cta.ariaLabel}"` : '';
+              carouselCardsHtml += `<a href="${cta.link}" class="${ctaClasses}" ${ctaStyles ? `style="${ctaStyles}"` : ''}${target}${ariaLabelCta}>${cta.text}</a>`;
+            });
+            carouselCardsHtml += '</div>';
+          }
+          
+          carouselCardsHtml += '</div>';
+          return carouselCardsHtml;
+        
+        case 'carouselitems':
+        case 'carouselItems':
+          let carouselItemsHtml = '<div class="mc-carousel-items">';
+          
+          if (data.mainHeading && data.mainHeading.text) {
+            const headingTag = data.mainHeading.tag || 'h2';
+            const headingClasses = data.mainHeading.classes || '';
+            const headingStyles = data.mainHeading.inlineStyles || '';
+            carouselItemsHtml += `<${headingTag} class="mc-carousel-heading ${headingClasses}" ${headingStyles ? `style="${headingStyles}"` : ''}>${data.mainHeading.text}</${headingTag}>`;
+          }
+          
+          if (data.description) {
+            carouselItemsHtml += `<div class="mc-carousel-description">${data.description}</div>`;
+          }
+          
+          if (data.image && data.image.urls && data.image.urls.length > 0) {
+            const altText = data.image.altText || 'Carousel image';
+            carouselItemsHtml += `<div class="mc-carousel-image">`;
+            carouselItemsHtml += `<img src="${data.image.urls[0]}" alt="${altText}" loading="lazy">`;
+            carouselItemsHtml += `</div>`;
+          }
+          
+          if (data.cta && data.cta.length > 0) {
+            carouselItemsHtml += '<div class="mc-carousel-ctas">';
+            data.cta.forEach(cta => {
+              const ctaClasses = cta.classes || 'mc-cta-button';
+              const ctaStyles = cta.inlineStyles || '';
+              const target = cta.openInNewTab ? ' target="_blank" rel="noopener"' : '';
+              const ariaLabelCta = cta.ariaLabel ? ` aria-label="${cta.ariaLabel}"` : '';
+              carouselItemsHtml += `<a href="${cta.link}" class="${ctaClasses}" ${ctaStyles ? `style="${ctaStyles}"` : ''}${target}${ariaLabelCta}>${cta.text}</a>`;
+            });
+            carouselItemsHtml += '</div>';
+          }
+          
+          carouselItemsHtml += '</div>';
+          return carouselItemsHtml;
+        
+        case 'heroimagescroll':
+        case 'heroImageScroll':
+          let heroImageScrollHtml = '<div class="mc-hero-image-scroll">';
+          
+          if (data.mainHeading && data.mainHeading.text) {
+            const headingTag = data.mainHeading.tag || 'h1';
+            const headingClasses = data.mainHeading.classes || '';
+            const headingStyles = data.mainHeading.inlineStyles || '';
+            heroImageScrollHtml += `<${headingTag} class="mc-hero-main-heading ${headingClasses}" ${headingStyles ? `style="${headingStyles}"` : ''}>${data.mainHeading.text}</${headingTag}>`;
+          }
+          
+          if (data.subHeading && data.subHeading.text) {
+            const subHeadingTag = data.subHeading.tag || 'h2';
+            const subHeadingClasses = data.subHeading.classes || '';
+            const subHeadingStyles = data.subHeading.inlineStyles || '';
+            heroImageScrollHtml += `<${subHeadingTag} class="mc-hero-sub-heading ${subHeadingClasses}" ${subHeadingStyles ? `style="${subHeadingStyles}"` : ''}>${data.subHeading.text}</${subHeadingTag}>`;
+          }
+          
+          if (data.description) {
+            heroImageScrollHtml += `<div class="mc-hero-description">${data.description}</div>`;
+          }
+          
+          if (data.images && data.images.urls && data.images.urls.length > 0) {
+            const altText = data.images.altText || 'Hero image';
+            heroImageScrollHtml += `<div class="mc-hero-image">`;
+            heroImageScrollHtml += `<img src="${data.images.urls[0]}" alt="${altText}" loading="lazy">`;
+            heroImageScrollHtml += `</div>`;
+          }
+          
+          if (data.cta && data.cta.length > 0) {
+            heroImageScrollHtml += '<div class="mc-hero-ctas">';
+            data.cta.forEach(cta => {
+              const ctaClasses = cta.classes || 'mc-cta-button';
+              const ctaStyles = cta.inlineStyles || '';
+              const target = cta.openInNewTab ? ' target="_blank" rel="noopener"' : '';
+              const ariaLabelCta = cta.ariaLabel ? ` aria-label="${cta.ariaLabel}"` : '';
+              heroImageScrollHtml += `<a href="${cta.link}" class="${ctaClasses}" ${ctaStyles ? `style="${ctaStyles}"` : ''}${target}${ariaLabelCta}>${cta.text}</a>`;
+            });
+            heroImageScrollHtml += '</div>';
+          }
+          
+          heroImageScrollHtml += '</div>';
+          return heroImageScrollHtml;
+        
+        case 'genericheading':
+        case 'genericHeading':
+          const headingTag = data.tag || 'h2';
+          const headingClasses = data.classes || '';
+          const headingStyles = data.inlineStyles || '';
+          const headingText = data.text || '';
+          return `<${headingTag} class="mc-generic-heading ${headingClasses}" ${headingStyles ? `style="${headingStyles}"` : ''}>${headingText}</${headingTag}>`;
+        
+        case 'genericcta':
+        case 'genericCta':
+          const ctaClasses = data.classes || 'mc-generic-cta';
+          const ctaStyles = data.inlineStyles || '';
+          const target = data.openInNewTab ? ' target="_blank" rel="noopener"' : '';
+          const ariaLabelGeneric = data.ariaLabel ? ` aria-label="${data.ariaLabel}"` : '';
+          
+          let ctaIconHtml = '';
+          if (data.icon && data.icon.urls && data.icon.urls.length > 0) {
+            const iconAlt = data.icon.altText || 'Icon';
+            ctaIconHtml = `<img src="${data.icon.urls[0]}" alt="${iconAlt}" class="mc-cta-icon" loading="lazy">`;
+          }
+          
+          return `<a href="${data.link || '#'}" class="${ctaClasses}" ${ctaStyles ? `style="${ctaStyles}"` : ''}${target}${ariaLabelGeneric}>${ctaIconHtml}${data.text || 'Click here'}</a>`;
+        
+        case 'genericbadge':
+        case 'genericBadge':
+          const badgeClasses = data.classes || '';
+          const badgeStyles = data.inlineStyles || '';
+          return `<span class="mc-generic-badge ${badgeClasses}" ${badgeStyles ? `style="${badgeStyles}"` : ''}>${data.text || ''}</span>`;
+        
+        case 'genericcard':
+        case 'genericCard':
+          let genericCardHtml = '<div class="mc-generic-card"';
+          if (data.id) genericCardHtml += ` id="${data.id}"`;
+          if (data.classes) genericCardHtml += ` class="mc-generic-card ${data.classes}"`;
+          if (data.inlineStyles) genericCardHtml += ` style="${data.inlineStyles}"`;
+          if (data.isClickable) genericCardHtml += ' data-clickable="true"';
+          genericCardHtml += '>';
+          
+          if (data.badge && data.badge.text) {
+            const badgeClassesCard = data.badge.classes || '';
+            const badgeStylesCard = data.badge.inlineStyles || '';
+            genericCardHtml += `<span class="mc-card-badge ${badgeClassesCard}" ${badgeStylesCard ? `style="${badgeStylesCard}"` : ''}>${data.badge.text}</span>`;
+          }
+          
+          if (data.asset && data.asset.type) {
+            if (data.asset.type === 'image' && data.asset.urls && data.asset.urls.length > 0) {
+              const imgClasses = data.asset.classes || '';
+              const altText = data.asset.altText || '';
+              genericCardHtml += `<div class="mc-card-image ${imgClasses}">`;
+              genericCardHtml += `<img src="${data.asset.urls[0]}" alt="${altText}" loading="lazy">`;
+              genericCardHtml += '</div>';
+            }
+          }
+          
+          genericCardHtml += '<div class="mc-card-content">';
+          
+          if (data.heading && data.heading.text) {
+            const headingTagCard = data.heading.tag || 'h3';
+            const headingClassesCard = data.heading.classes || '';
+            const headingStylesCard = data.heading.inlineStyles || '';
+            genericCardHtml += `<${headingTagCard} class="mc-card-title ${headingClassesCard}" ${headingStylesCard ? `style="${headingStylesCard}"` : ''}>${data.heading.text}</${headingTagCard}>`;
+          }
+          
+          if (data.description) {
+            genericCardHtml += `<div class="mc-card-description">${data.description}</div>`;
+          }
+          
+          if (data.cta && data.cta.length > 0) {
+            genericCardHtml += '<div class="mc-card-ctas">';
+            data.cta.forEach(cta => {
+              const ctaClassesCard = cta.classes || 'mc-cta-link';
+              const ctaStylesCard = cta.inlineStyles || '';
+              const targetCard = cta.openInNewTab ? ' target="_blank" rel="noopener"' : '';
+              const ariaLabelCard = cta.ariaLabel ? ` aria-label="${cta.ariaLabel}"` : '';
+              genericCardHtml += `<a href="${cta.link}" class="${ctaClassesCard}" ${ctaStylesCard ? `style="${ctaStylesCard}"` : ''}${targetCard}${ariaLabelCard}>${cta.text}</a>`;
+            });
+            genericCardHtml += '</div>';
+          }
+          
+          genericCardHtml += '</div>';
+          genericCardHtml += '</div>';
+          return genericCardHtml;
+        
         default:
+          // 🔧 CRITICAL: ALWAYS render something, never return empty
+          console.warn(`⚠️ [SDK] Unknown component type: ${componentType}, rendering fallback`);
+          
           let genericContent = '';
           let hasRichText = false;
           
-          const title = data.title || data.heading || data.name || componentType;
+          // Extract title - handle both string and object heading
+          let title = componentType || 'Content';
+          if (data.title) {
+            title = data.title;
+          } else if (data.heading) {
+            if (typeof data.heading === 'string') {
+              title = data.heading;
+            } else if (typeof data.heading === 'object' && data.heading.text) {
+              title = data.heading.text;
+            }
+          } else if (data.name) {
+            title = data.name;
+          }
           
+          // Try to extract meaningful content from data
           Object.keys(data).forEach(key => {
             const value = data[key];
             
@@ -1546,7 +2158,7 @@
                 `;
               }
             }
-            else if (typeof value === 'string') {
+            else if (typeof value === 'string' && value.trim()) {
               genericContent += `
                 <div class="mc-field">
                   <span class="mc-field-label">${key.replace(/([A-Z])/g, ' $1').trim()}:</span>
@@ -1570,21 +2182,45 @@
             }
           });
           
+          // 🔧 ALWAYS show something, even if no content extracted
           if (!genericContent) {
+            // Check if this is the fallback component from backend
+            const isFallback = component && (component.id === 'fallback-default-component' || component.source === 'system-fallback');
+            
+            if (isFallback) {
+              // Render the fallback component properly
+              return `
+                <div class="mc-alert mc-alert-info" style="margin: 24px auto; max-width: 800px; padding: 32px 24px; background-color: #f0f4f8; border-radius: 8px; border: 1px solid #d1d9e0; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                  <div style="display: flex; align-items: start; gap: 16px;">
+                    <span style="font-size: 24px;">ℹ️</span>
+                    <div style="flex: 1;">
+                      <h3 style="margin: 0 0 12px 0; font-size: 20px; color: #333;">${data.heading || 'Content Unavailable'}</h3>
+                      <p style="margin: 0; line-height: 1.6; color: #555;">${data.message || 'Default content is displayed. The requested content could not be loaded at this time.'}</p>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }
+            
+            // Generic unknown component - still show something
             return `
-              <div class="mc-debug-component">
-                <div class="mc-debug-title">⚙️ ${title}</div>
+              <div class="mc-debug-component" style="margin: 16px auto; padding: 20px; background: #f8f9fa; border: 2px dashed #dee2e6; border-radius: 8px; max-width: 800px;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                  <span style="font-size: 24px;">⚙️</span>
+                  <div class="mc-debug-title" style="font-size: 18px; font-weight: 600; color: #495057;">${title}</div>
+                </div>
+                <p style="margin: 0 0 12px 0; color: #6c757d; font-size: 14px;">This component type (${componentType}) is not yet supported. Showing raw data:</p>
                 <details class="mc-debug-details">
-                  <summary>View Raw Data</summary>
-                  <pre class="mc-debug-pre">${JSON.stringify(data, null, 2)}</pre>
+                  <summary style="cursor: pointer; color: #0078d4; font-weight: 500;">View Raw Data</summary>
+                  <pre class="mc-debug-pre" style="margin-top: 12px; padding: 12px; background: white; border: 1px solid #dee2e6; border-radius: 4px; overflow-x: auto; font-size: 12px;">${JSON.stringify(data, null, 2)}</pre>
                 </details>
               </div>
             `;
           }
           
           return `
-            <div class="mc-generic-component">
-              <h3 class="mc-generic-title">${title}</h3>
+            <div class="mc-generic-component" style="margin: 16px auto; max-width: 800px;">
+              <h3 class="mc-generic-title" style="font-size: 24px; margin-bottom: 16px; color: #333;">${title}</h3>
               ${genericContent}
             </div>
           `;
@@ -1988,6 +2624,185 @@
     
     testLoading: function() {
       this.injectLoadingPlaceholder('test-' + Date.now());
+    },
+
+    // ========================================
+    // 🗺️ HEATMAP TRACKING FUNCTIONS
+    // ========================================
+
+    findComponentAtPosition: function(x, y) {
+      /**
+       * Find which component is under the cursor position
+       * Returns component data or null if not over a component
+       */
+      const components = document.querySelectorAll('[data-component-id]');
+      
+      for (const comp of components) {
+        const rect = comp.getBoundingClientRect();
+        const absoluteTop = window.pageYOffset + rect.top;
+        const absoluteBottom = absoluteTop + rect.height;
+        
+        // Check if cursor is within component bounds
+        if (y >= absoluteTop && y <= absoluteBottom && 
+            x >= rect.left && x <= rect.right) {
+          
+          return {
+            id: comp.getAttribute('data-component-id'),
+            type: comp.getAttribute('data-component-type') || 'unknown',
+            dbId: comp.getAttribute('data-db-id') || null,
+            order: parseInt(comp.getAttribute('data-order') || '0'),
+            relativeY: y - absoluteTop,
+            height: rect.height,
+            width: rect.width,
+            top: absoluteTop
+          };
+        }
+      }
+      
+      return null; // Cursor not over any component
+    },
+
+    getComponentsSnapshot: function() {
+      /**
+       * Capture snapshot of all visible components
+       * Used to reconstruct page layout for heatmap visualization
+       */
+      const components = document.querySelectorAll('[data-component-id]');
+      const snapshot = [];
+      
+      components.forEach((comp, index) => {
+        const rect = comp.getBoundingClientRect();
+        snapshot.push({
+          id: comp.getAttribute('data-component-id'),
+          type: comp.getAttribute('data-component-type') || 'unknown',
+          dbId: comp.getAttribute('data-db-id') || null,
+          order: index,
+          top: window.pageYOffset + rect.top,
+          height: rect.height,
+          width: rect.width
+        });
+      });
+      
+      return snapshot;
+    },
+
+    startMouseTracking: function() {
+      /**
+       * Initialize mouse tracking for heatmap
+       * Captures mouse positions with throttling and sends in batches
+       */
+      if (this.websocketClosed || this.pageNotConfigured) {
+        return;
+      }
+
+      // Mouse move listener with throttle
+      document.addEventListener('mousemove', (e) => {
+        if (this.websocketClosed || this.pageNotConfigured) {
+          if (this.mouseMoveTimeout) {
+            clearTimeout(this.mouseMoveTimeout);
+            this.mouseMoveTimeout = null;
+          }
+          return;
+        }
+        
+        // Throttle: capture every 100ms
+        if (this.mouseMoveTimeout) return;
+        
+        this.mouseMoveTimeout = setTimeout(() => {
+          const pageX = e.pageX;
+          const pageY = e.pageY;
+          
+          // Find component under cursor
+          const component = this.findComponentAtPosition(pageX, pageY);
+          
+          // Create position entry
+          const position = {
+            x: Math.round(pageX),
+            y: Math.round(pageY),
+            t: Date.now()
+          };
+          
+          // Add component context if cursor is over a component
+          if (component) {
+            position.cId = component.id;
+            position.cType = component.type;
+            if (component.dbId) position.cDbId = component.dbId;
+            position.cOrder = component.order;
+            position.cY = Math.round(component.relativeY);
+            position.cHeight = Math.round(component.height);
+          }
+          
+          this.mousePositionBuffer.push(position);
+          
+          // Send batch if buffer is full
+          if (this.mousePositionBuffer.length >= this.HEATMAP_BATCH_SIZE) {
+            this.sendHeatmapBatch();
+          }
+          
+          this.mouseMoveTimeout = null;
+        }, 100);
+      });
+
+      // Timer to send batch periodically (every 15 seconds)
+      this.heatmapSendInterval = setInterval(() => {
+        if (this.mousePositionBuffer.length > 0) {
+          this.sendHeatmapBatch();
+        }
+      }, this.HEATMAP_SEND_INTERVAL);
+
+      // Send before page unload
+      window.addEventListener('beforeunload', () => {
+        this.sendHeatmapBatch();
+      });
+
+      console.log('[MindContent SDK] 🗺️ Mouse tracking started for heatmap');
+    },
+
+    sendHeatmapBatch: function() {
+      /**
+       * Send batch of mouse positions via WebSocket
+       */
+      if (!this.iframe || !this.iframe.contentWindow) {
+        return;
+      }
+
+      if (this.websocketClosed || this.pageNotConfigured) {
+        return;
+      }
+
+      if (this.mousePositionBuffer.length === 0) {
+        return;
+      }
+
+      try {
+        const message = {
+          type: 'heatmap_batch',
+          userId: this.config.userId || localStorage.getItem('user_id'),
+          sessionId: this.getOrCreateSessionId(),
+          pageUrl: window.location.href,
+          positions: this.mousePositionBuffer,
+          viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight
+          },
+          scrollHeight: document.documentElement.scrollHeight,
+          deviceType: this.getDeviceType(),
+          componentsSnapshot: this.getComponentsSnapshot()
+        };
+
+        // Send via postMessage to iframe (which forwards to WebSocket)
+        const sanitizedMessage = this.sanitizeForPostMessage(message);
+        this.iframe.contentWindow.postMessage(sanitizedMessage, this.config.reactAppUrl);
+
+        console.log(`[MindContent SDK] 🗺️ Sent heatmap batch: ${this.mousePositionBuffer.length} positions`);
+        
+        // Clear buffer
+        this.mousePositionBuffer = [];
+        this.lastHeatmapSend = Date.now();
+        
+      } catch (error) {
+        console.error('[MindContent SDK] ❌ Error sending heatmap batch:', error);
+      }
     }
   };
 
