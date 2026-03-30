@@ -922,19 +922,51 @@
       const existingComponents = targetContainer.querySelectorAll('[data-component-id]');
       wrapper.setAttribute('data-order', existingComponents.length.toString());
       
+      // Always show component info and tags area
+      const tagsContainer = document.createElement('div');
+      tagsContainer.style.cssText = 'position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; flex-wrap: nowrap; justify-content: flex-end; z-index: 10;';
+      
+      // Component ID badge
+      if (component.id) {
+        const idBadge = document.createElement('span');
+        idBadge.style.cssText = 'background-color: #17a2b8; color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1); white-space: nowrap;';
+        idBadge.textContent = component.id;
+        tagsContainer.appendChild(idBadge);
+      }
+      
+      // Component type badge
+      if (component.componentType) {
+        const typeBadge = document.createElement('span');
+        typeBadge.style.cssText = 'background-color: #28a745; color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1); white-space: nowrap;';
+        typeBadge.textContent = component.componentType;
+        tagsContainer.appendChild(typeBadge);
+      }
+      
+      // Component slug badge (check multiple possible field names)
+      const slugValue = component.slug || component.Slug || component.name || component.Name;
+      if (slugValue) {
+        const slugBadge = document.createElement('span');
+        slugBadge.style.cssText = 'background-color: #6f42c1; color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1); white-space: nowrap;';
+        slugBadge.textContent = slugValue;
+        tagsContainer.appendChild(slugBadge);
+      }
+      
+      // Tags badges
       if (component.tags && Array.isArray(component.tags) && component.tags.length > 0) {
-        const tagsContainer = document.createElement('div');
-        tagsContainer.style.cssText = 'position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; flex-wrap: wrap; max-width: 300px; justify-content: flex-end; z-index: 10;';
-        
         component.tags.forEach(tag => {
           const tagBadge = document.createElement('span');
           tagBadge.style.cssText = 'background-color: #0078d4; color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1); white-space: nowrap;';
           tagBadge.textContent = tag;
           tagsContainer.appendChild(tagBadge);
         });
-        
-        wrapper.appendChild(tagsContainer);
+      } else {
+        const noTagBadge = document.createElement('span');
+        noTagBadge.style.cssText = 'background-color: #6c757d; color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.1); white-space: nowrap; opacity: 0.7;';
+        noTagBadge.textContent = 'Tag not defined';
+        tagsContainer.appendChild(noTagBadge);
       }
+      
+      wrapper.appendChild(tagsContainer);
       
       const contentDiv = document.createElement('div');
       contentDiv.innerHTML = componentHtml;
@@ -1787,17 +1819,75 @@
         case 'mediaImage':
           let mediaImageHtml = '<div class="mc-media-image"';
           if (data.id) mediaImageHtml += ` id="${data.id}"`;
-          if (data.classes) mediaImageHtml += ` class="mc-media-image ${data.classes}"`;
-          if (data.inlineStyles) mediaImageHtml += ` style="${data.inlineStyles}"`;
+          
+          // Build class list
+          let mediaImageClasses = 'mc-media-image';
+          if (data.classes) mediaImageClasses += ` ${data.classes}`;
+          mediaImageHtml += ` class="${mediaImageClasses}"`;
+          
+          // Default styling for a nice presentation
+          const defaultStyle = 'max-width: 800px; margin: 40px auto; padding: 24px; background: #f9fafb; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);';
+          if (data.inlineStyles) {
+            mediaImageHtml += ` style="${data.inlineStyles}"`;
+          } else {
+            mediaImageHtml += ` style="${defaultStyle}"`;
+          }
           mediaImageHtml += '>';
           
-          if (data.urls && data.urls.length > 0) {
-            const altText = data.altText || '';
-            mediaImageHtml += `<img src="${data.urls[0]}" alt="${altText}" class="mc-media-image-element" loading="lazy">`;
+          // Internal Name / Title (if present)
+          if (data.internalName) {
+            mediaImageHtml += `<div class="mc-media-image-title" style="font-size: 20px; font-weight: 600; color: #1f2937; margin-bottom: 16px;">${data.internalName}</div>`;
           }
           
+          // Image(s)
+          if (data.urls && data.urls.length > 0) {
+            const altText = data.altText || data.internalName || 'Image';
+            mediaImageHtml += `<div class="mc-media-image-container" style="border-radius: 8px; overflow: hidden; margin-bottom: 16px;">`;
+            
+            if (data.urls.length === 1) {
+              // Single image
+              mediaImageHtml += `<img src="${data.urls[0]}" alt="${altText}" class="mc-media-image-element" loading="lazy" style="width: 100%; height: auto; display: block;">`;
+            } else {
+              // Multiple images - gallery style
+              mediaImageHtml += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px;">`;
+              data.urls.forEach((url, idx) => {
+                const imgAlt = `${altText} ${idx + 1}`;
+                mediaImageHtml += `<img src="${url}" alt="${imgAlt}" class="mc-media-image-element" loading="lazy" style="width: 100%; height: auto; display: block; border-radius: 4px;">`;
+              });
+              mediaImageHtml += `</div>`;
+            }
+            
+            mediaImageHtml += `</div>`;
+          } else if (data.images && Array.isArray(data.images)) {
+            // Alternative structure: images as array
+            const altText = data.altText || data.internalName || 'Image';
+            mediaImageHtml += `<div class="mc-media-image-container" style="border-radius: 8px; overflow: hidden; margin-bottom: 16px;">`;
+            
+            if (data.images.length === 1) {
+              const imgData = data.images[0];
+              const imgUrl = imgData.url || imgData;
+              mediaImageHtml += `<img src="${imgUrl}" alt="${altText}" class="mc-media-image-element" loading="lazy" style="width: 100%; height: auto; display: block;">`;
+            } else {
+              mediaImageHtml += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px;">`;
+              data.images.forEach((imgData, idx) => {
+                const imgUrl = typeof imgData === 'string' ? imgData : imgData.url;
+                const imgAlt = `${altText} ${idx + 1}`;
+                mediaImageHtml += `<img src="${imgUrl}" alt="${imgAlt}" class="mc-media-image-element" loading="lazy" style="width: 100%; height: auto; display: block; border-radius: 4px;">`;
+              });
+              mediaImageHtml += `</div>`;
+            }
+            
+            mediaImageHtml += `</div>`;
+          }
+          
+          // Alt Text (if different from caption and exists)
+          if (data.altText && data.altText !== data.caption) {
+            mediaImageHtml += `<div class="mc-media-image-alt" style="font-size: 12px; color: #6b7280; font-style: italic; margin-bottom: 8px;">Alt text: ${data.altText}</div>`;
+          }
+          
+          // Caption / Description
           if (data.caption) {
-            mediaImageHtml += `<figcaption class="mc-media-image-caption">${data.caption}</figcaption>`;
+            mediaImageHtml += `<figcaption class="mc-media-image-caption" style="font-size: 14px; color: #4b5563; line-height: 1.6; text-align: center;">${data.caption}</figcaption>`;
           }
           
           mediaImageHtml += '</div>';
@@ -1989,43 +2079,92 @@
         
         case 'heroimagescroll':
         case 'heroImageScroll':
-          let heroImageScrollHtml = '<div class="mc-hero-image-scroll">';
+          let heroImageScrollHtml = '<div class="mc-hero-image-scroll" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 80px 20px; text-align: center; position: relative; overflow: hidden;">';
           
-          if (data.mainHeading && data.mainHeading.text) {
-            const headingTag = data.mainHeading.tag || 'h1';
-            const headingClasses = data.mainHeading.classes || '';
-            const headingStyles = data.mainHeading.inlineStyles || '';
-            heroImageScrollHtml += `<${headingTag} class="mc-hero-main-heading ${headingClasses}" ${headingStyles ? `style="${headingStyles}"` : ''}>${data.mainHeading.text}</${headingTag}>`;
+          // Main Heading
+          if (data.mainHeading) {
+            let headingText = '';
+            if (typeof data.mainHeading === 'string') {
+              headingText = data.mainHeading;
+            } else if (typeof data.mainHeading === 'object') {
+              headingText = data.mainHeading.text || data.mainHeading.internalName || '';
+            }
+            
+            if (headingText) {
+              const headingTag = (data.mainHeading.tag || 'h1');
+              const headingClasses = (typeof data.mainHeading === 'object' ? data.mainHeading.classes : '') || '';
+              const headingStyles = (typeof data.mainHeading === 'object' ? data.mainHeading.inlineStyles : '') || 'font-size: 48px; font-weight: 700; margin: 0 0 20px 0; line-height: 1.2;';
+              heroImageScrollHtml += `<${headingTag} class="mc-hero-main-heading ${headingClasses}" style="${headingStyles}">${headingText}</${headingTag}>`;
+            }
           }
           
-          if (data.subHeading && data.subHeading.text) {
-            const subHeadingTag = data.subHeading.tag || 'h2';
-            const subHeadingClasses = data.subHeading.classes || '';
-            const subHeadingStyles = data.subHeading.inlineStyles || '';
-            heroImageScrollHtml += `<${subHeadingTag} class="mc-hero-sub-heading ${subHeadingClasses}" ${subHeadingStyles ? `style="${subHeadingStyles}"` : ''}>${data.subHeading.text}</${subHeadingTag}>`;
+          // Sub Heading
+          if (data.subHeading) {
+            let subHeadingText = '';
+            if (typeof data.subHeading === 'string') {
+              subHeadingText = data.subHeading;
+            } else if (typeof data.subHeading === 'object') {
+              subHeadingText = data.subHeading.text || data.subHeading.internalName || '';
+            }
+            
+            if (subHeadingText) {
+              const subHeadingTag = (data.subHeading.tag || 'h2');
+              const subHeadingClasses = (typeof data.subHeading === 'object' ? data.subHeading.classes : '') || '';
+              const subHeadingStyles = (typeof data.subHeading === 'object' ? data.subHeading.inlineStyles : '') || 'font-size: 24px; font-weight: 400; margin: 0 0 30px 0; opacity: 0.95;';
+              heroImageScrollHtml += `<${subHeadingTag} class="mc-hero-sub-heading ${subHeadingClasses}" style="${subHeadingStyles}">${subHeadingText}</${subHeadingTag}>`;
+            }
           }
           
+          // Description (can be RichText or string)
           if (data.description) {
-            heroImageScrollHtml += `<div class="mc-hero-description">${data.description}</div>`;
+            const descriptionText = typeof data.description === 'string' ? data.description : 
+                                   (data.description.content ? this.richTextToHtml(data.description) : JSON.stringify(data.description));
+            heroImageScrollHtml += `<div class="mc-hero-description" style="font-size: 18px; max-width: 700px; margin: 0 auto 40px; line-height: 1.6; opacity: 0.9;">${descriptionText}</div>`;
           }
           
-          if (data.images && data.images.urls && data.images.urls.length > 0) {
-            const altText = data.images.altText || 'Hero image';
-            heroImageScrollHtml += `<div class="mc-hero-image">`;
-            heroImageScrollHtml += `<img src="${data.images.urls[0]}" alt="${altText}" loading="lazy">`;
-            heroImageScrollHtml += `</div>`;
-          }
-          
-          if (data.cta && data.cta.length > 0) {
-            heroImageScrollHtml += '<div class="mc-hero-ctas">';
-            data.cta.forEach(cta => {
-              const ctaClasses = cta.classes || 'mc-cta-button';
+          // CTAs / Buttons
+          if (data.cta && Array.isArray(data.cta) && data.cta.length > 0) {
+            heroImageScrollHtml += '<div class="mc-hero-ctas" style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-bottom: 40px;">';
+            data.cta.forEach((cta, idx) => {
+              // Extract CTA properties
+              const ctaText = cta.text || cta.internalName || `Button ${idx + 1}`;
+              const ctaLink = cta.link || '#';
+              const ctaClasses = cta.classes || '';
               const ctaStyles = cta.inlineStyles || '';
               const target = cta.openInNewTab ? ' target="_blank" rel="noopener"' : '';
               const ariaLabelCta = cta.ariaLabel ? ` aria-label="${cta.ariaLabel}"` : '';
-              heroImageScrollHtml += `<a href="${cta.link}" class="${ctaClasses}" ${ctaStyles ? `style="${ctaStyles}"` : ''}${target}${ariaLabelCta}>${cta.text}</a>`;
+              
+              // Default button styling
+              const defaultButtonStyle = idx === 0 
+                ? 'background: white; color: #667eea; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block; transition: all 0.3s; box-shadow: 0 4px 12px rgba(0,0,0,0.15);'
+                : 'background: transparent; color: white; padding: 14px 32px; border: 2px solid white; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block; transition: all 0.3s;';
+              
+              const finalStyle = ctaStyles || defaultButtonStyle;
+              
+              heroImageScrollHtml += `<a href="${ctaLink}" class="mc-cta-button ${ctaClasses}" style="${finalStyle}"${target}${ariaLabelCta}>${ctaText}</a>`;
             });
             heroImageScrollHtml += '</div>';
+          }
+          
+          // Image
+          if (data.images) {
+            let imageUrl = null;
+            let altText = 'Hero image';
+            
+            // Handle different image data structures
+            if (data.images.urls && data.images.urls.length > 0) {
+              imageUrl = data.images.urls[0];
+              altText = data.images.altText || altText;
+            } else if (data.images.url) {
+              imageUrl = data.images.url;
+              altText = data.images.altText || data.images.title || altText;
+            }
+            
+            if (imageUrl) {
+              heroImageScrollHtml += `<div class="mc-hero-image" style="max-width: 1000px; margin: 0 auto; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">`;
+              heroImageScrollHtml += `<img src="${imageUrl}" alt="${altText}" loading="lazy" style="width: 100%; height: auto; display: block;">`;
+              heroImageScrollHtml += `</div>`;
+            }
           }
           
           heroImageScrollHtml += '</div>';
