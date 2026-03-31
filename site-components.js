@@ -106,7 +106,10 @@
 
         injectHead(pageTitle);
         injectHeader();
-        // injectFooter();
+        
+        setTimeout(() => {
+            injectFooter();
+        }, 20000);
 
         console.log('🎨 Site components initialized');
     }

@@ -940,23 +940,54 @@
   background: linear-gradient(135deg, #fff9e6 0%, #fff5cc 100%);
   border-left: 4px solid #f39c12;
   border-radius: var(--mc-radius-md);
-  padding: var(--mc-spacing-md);
+  padding: var(--mc-spacing-lg);
   margin: var(--mc-spacing-lg) 0;
-  display: flex;
-  gap: var(--mc-spacing-md);
-  align-items: flex-start;
 }
 
-.mc-footnotes-icon {
-  font-size: 24px;
-  flex-shrink: 0;
+.mc-footnotes-list {
+  margin: 0;
+  padding-left: var(--mc-spacing-xl);
+  color: #555;
+  font-size: var(--mc-font-size-sm);
+  line-height: 1.7;
 }
 
+.mc-footnote-item {
+  margin-bottom: var(--mc-spacing-md);
+  padding-left: var(--mc-spacing-xs);
+}
+
+.mc-footnote-item:last-child {
+  margin-bottom: 0;
+}
+
+.mc-footnote-item p {
+  margin: 0;
+}
+
+.mc-footnote-item a {
+  color: #f39c12;
+  text-decoration: underline;
+  transition: color 0.2s ease;
+}
+
+.mc-footnote-item a:hover {
+  color: #e67e22;
+}
+
+/* Fallback for old structure */
 .mc-footnotes-content {
-  flex: 1;
   color: #555;
   font-size: var(--mc-font-size-sm);
   line-height: 1.6;
+}
+
+.mc-footnotes-content p {
+  margin: 0 0 var(--mc-spacing-sm) 0;
+}
+
+.mc-footnotes-content p:last-child {
+  margin-bottom: 0;
 }
 
 /* ==========================================================================

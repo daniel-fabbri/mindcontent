@@ -1571,21 +1571,71 @@
           `;
         
         case 'footnotes':
-          let footnotesContent = '';
-          if (typeof data.content === 'string') {
-            footnotesContent = data.content;
-          } else if (data.content && data.content.nodeType === 'document') {
-            footnotesContent = this.richTextToHtml(data.content);
-          } else if (data.text) {
-            footnotesContent = data.text;
+          console.log('📌 [FOOTNOTES] Rendering with data:', data);
+          
+          // Handle nested data structure (when data comes wrapped)
+          const footnotesData = data.data || data;
+          console.log('📌 [FOOTNOTES] After unwrap:', footnotesData);
+          
+          let footnotesHtml = '<div class="mc-footnotes"';
+          if (footnotesData.id) footnotesHtml += ` id="${footnotesData.id}"`;
+          if (footnotesData.classes) footnotesHtml += ` class="mc-footnotes ${footnotesData.classes}"`;
+          footnotesHtml += '>';
+          
+          // Check if we have items array (proper structure from backend)
+          if (footnotesData.items && Array.isArray(footnotesData.items) && footnotesData.items.length > 0) {
+            console.log(`📌 [FOOTNOTES] Found ${footnotesData.items.length} items`);
+            footnotesHtml += '<ol class="mc-footnotes-list">';
+            footnotesData.items.forEach((item, index) => {
+              console.log(`📌 [FOOTNOTES] Item ${index}:`, item);
+              
+              // Handle wrapped item structure (item.data.text vs item.text)
+              const itemData = item.data || item;
+              console.log(`  - After unwrap:`, itemData);
+              console.log(`  - id: "${itemData.id}"`);
+              console.log(`  - text: "${itemData.text}"`);
+              console.log(`  - ariaLabel: "${itemData.ariaLabel}"`);
+              
+              const itemId = itemData.id ? ` id="footnote-${itemData.id}"` : '';
+              const ariaLabel = itemData.ariaLabel ? ` aria-label="${itemData.ariaLabel}"` : '';
+              footnotesHtml += `<li class="mc-footnote-item"${itemId}${ariaLabel}>`;
+              
+              // Render text content
+              if (itemData.text) {
+                footnotesHtml += itemData.text;
+                console.log(`  ✅ Added text to item ${index}`);
+              } else if (itemData.content) {
+                if (typeof itemData.content === 'string') {
+                  footnotesHtml += itemData.content;
+                } else if (itemData.content.nodeType === 'document') {
+                  footnotesHtml += this.richTextToHtml(itemData.content);
+                }
+                console.log(`  ✅ Added content to item ${index}`);
+              } else {
+                console.warn(`  ⚠️ No text or content found for item ${index}`);
+              }
+              
+              footnotesHtml += '</li>';
+            });
+            footnotesHtml += '</ol>';
+          }
+          // Fallback: Old structure with content/text fields
+          else {
+            footnotesHtml += '<div class="mc-footnotes-content">';
+            if (typeof footnotesData.content === 'string') {
+              footnotesHtml += footnotesData.content;
+            } else if (footnotesData.content && footnotesData.content.nodeType === 'document') {
+              footnotesHtml += this.richTextToHtml(footnotesData.content);
+            } else if (footnotesData.text) {
+              footnotesHtml += footnotesData.text;
+            } else {
+              footnotesHtml += '<p>No footnotes available.</p>';
+            }
+            footnotesHtml += '</div>';
           }
           
-          return `
-            <div class="mc-footnotes">
-              <div class="mc-footnotes-icon">📝</div>
-              <div class="mc-footnotes-content">${footnotesContent}</div>
-            </div>
-          `;
+          footnotesHtml += '</div>';
+          return footnotesHtml;
         
         case 'transformyourcreativewritingwithai':
         case 'transformYourCreativeWritingWithAi':
