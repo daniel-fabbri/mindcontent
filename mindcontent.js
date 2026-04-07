@@ -1842,7 +1842,8 @@
           
           if (data.items && data.items.length > 0) {
             data.items.forEach((item, index) => {
-              const itemId = item.id || `accordion-item-${accordionId}-${index}`;
+              // 🔧 FIX: Always prefix with accordionId to ensure uniqueness across multiple accordions on same page
+              const itemId = item.id ? `${accordionId}-${item.id}` : `accordion-item-${accordionId}-${index}`;
               const question = item.question || item.title || item.internalName || '';
               const answer = item.answer || item.description || item.content || '';
               

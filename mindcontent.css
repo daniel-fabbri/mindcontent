@@ -2067,14 +2067,20 @@
 }
 
 /* Hero title */
-.mc-hero-title {
+.mc-hero-content .mc-hero-title {
   font-size: var(--mc-font-size-xxxl);
   font-weight: 700;
   margin: 0 0 var(--mc-spacing-lg) 0;
   line-height: 1.2;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
   letter-spacing: -0.5px;
   text-align: center;
+  /* Override any gradient styles and ensure white text */
+  color: white !important;
+  background: none !important;
+  -webkit-background-clip: unset !important;
+  -webkit-text-fill-color: white !important;
+  background-clip: unset !important;
+  text-shadow: none;
 }
 
 /* Hero caption/description */
@@ -2083,7 +2089,7 @@
   font-weight: 400;
   line-height: 1.6;
   margin: 0 0 var(--mc-spacing-md) 0;
-  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);
+  text-shadow: none;
   opacity: 0.95;
 }
 
@@ -2093,7 +2099,7 @@
   font-weight: 300;
   line-height: 1.5;
   margin: 0;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+  text-shadow: none;
   opacity: 0.9;
 }
 
