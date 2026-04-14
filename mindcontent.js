@@ -5,13 +5,37 @@
                              window.location.port === '5500' ||
                              window.location.protocol === 'file:';
   
-  const REACT_APP_URL = isLocalEnvironment 
-    ? 'http://localhost:5173' 
-    : 'https://app-frontend-webperso-dev-taetd6ptyxspw.azurewebsites.net';
+  // Detect environment based on hostname and use corresponding URLs
+  let REACT_APP_URL;
+  let API_URL;
   
-  const API_URL = isLocalEnvironment
-    ? 'http://localhost:8000'
-    : 'https://app-backend-webperso-dev-taetd6ptyxspw.azurewebsites.net';
+  if (isLocalEnvironment) {
+    REACT_APP_URL = 'http://localhost:5173';
+    API_URL = 'http://localhost:8000';
+  } else {
+    // Check if there's a global config
+    if (window.MINDCONTENT_CONFIG && window.MINDCONTENT_CONFIG.apiUrl) {
+      API_URL = window.MINDCONTENT_CONFIG.apiUrl;
+      REACT_APP_URL = window.MINDCONTENT_CONFIG.frontendUrl || window.location.origin;
+    } else {
+      // Auto-detect based on current frontend URL
+      const currentHost = window.location.hostname;
+      
+      if (currentHost.includes('app-frontend-webperso-dev-bva0fabtb2geacc0')) {
+        // Avanade environment
+        REACT_APP_URL = 'https://app-frontend-webperso-dev-bva0fabtb2geacc0.eastus2-01.azurewebsites.net';
+        API_URL = 'https://app-backend-webperso-dev-dxh7dbcrhtcqe6em.eastus2-01.azurewebsites.net';
+      } else if (currentHost.includes('app-frontend-webperso-dev-taetd6ptyxspw')) {
+        // Cliente environment (original)
+        REACT_APP_URL = 'https://app-frontend-webperso-dev-taetd6ptyxspw.azurewebsites.net';
+        API_URL = 'https://app-backend-webperso-dev-taetd6ptyxspw.azurewebsites.net';
+      } else {
+        // Default/fallback
+        REACT_APP_URL = window.location.origin;
+        API_URL = 'https://app-backend-webperso-dev-taetd6ptyxspw.azurewebsites.net';
+      }
+    }
+  }
   
 
   const MindContent = {
