@@ -21,11 +21,7 @@
       // Auto-detect based on current frontend URL
       const currentHost = window.location.hostname;
       
-      if (currentHost.includes('github.io')) {
-        // GitHub Pages environment
-        REACT_APP_URL = 'https://daniel-fabbri.github.io/mindcontent/index.html';
-        API_URL = 'https://app-backend-webperso-dev-taetd6ptyxspw.azurewebsites.net';
-      } else if (currentHost.includes('app-frontend-webperso-dev-bva0fabtb2geacc0')) {
+      if (currentHost.includes('app-frontend-webperso-dev-bva0fabtb2geacc0')) {
         // Avanade environment
         REACT_APP_URL = 'https://app-frontend-webperso-dev-bva0fabtb2geacc0.eastus2-01.azurewebsites.net';
         API_URL = 'https://app-backend-webperso-dev-dxh7dbcrhtcqe6em.eastus2-01.azurewebsites.net';
@@ -34,8 +30,8 @@
         REACT_APP_URL = 'https://app-frontend-webperso-dev-taetd6ptyxspw.azurewebsites.net';
         API_URL = 'https://app-backend-webperso-dev-taetd6ptyxspw.azurewebsites.net';
       } else {
-        // Default/fallback
-        REACT_APP_URL = window.location.origin;
+        // Default/fallback - use Cliente Azure URLs
+        REACT_APP_URL = 'https://app-frontend-webperso-dev-taetd6ptyxspw.azurewebsites.net';
         API_URL = 'https://app-backend-webperso-dev-taetd6ptyxspw.azurewebsites.net';
       }
     }
